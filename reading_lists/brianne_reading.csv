@@ -1,0 +1,39 @@
+Reading Material ,Notes / Overview,Inferences
+Programming the Machine,"Part 1
+Any interaction with a program changes it from one state to another
+Corrupting memory allows for more program states to exist
+
+Part 2
+It is hard to fully recreate an exploit if not all conditions at the time of exploit are present. (e.g to examine a network attack, network may need to be operable.)
+Pushing a machine out of the boundaries of it's considered ""normal states"" can change the machines qualities drastically. (e.g. double it's amount of storage.) 
+Hard to determine if a program is ""nonexploitable"" as crashes can happen over a period of time, likely due to a value not being properly checked. 
+The process for finding bugs and exploits are ever changing, as typical paths can have viability change depending on program state.
+Must act within the boundaries of a program's state, before moving it to another. ",
+Wind Energy Test Bed,"Turbines controlled by Arduino boards, it's motors and sensors ran by Rasberry Pi microcontrollers
+
+
+
+",
+Peripheerals,"Control Systems consist of RTUs, PLCs, and custom-emulated PLCs
+PLC  allows for several different kinds of communication (PROFINET IO, SIMATIC, Internet Communication, Web Servers, TCP/IP, SNMP, DCP, and LLDP
+Max transmission rate is 100 Mbit/s
+Connects to a SCADA network
+Controls set in place as safety measure to monitor and adjust in case wind turbines grow too fast. ",
+Rapid SCADA,"Communicates to sensors and controllers over protocols (Modbus, OPC UA, MQTT, and SNMP)
+Three-part application (Adminstration, Communicator, and Server for data storage and processing)
+PLC Modbus command (0 = stop, 1 = start turbine ) 
+Modbus has capapbilities of optimizing read/write speeds to avoid network congestion
+Monitors machine health via dashboard on proxy server
+",
+OPC UA ,,
+,,
+Hacking,"Sociological definition of trust: the trustee behaves as expected (despite potential capability to violate expectations)
+”Composition - Compose two wellunderstood tools and/or processes Get a system with deadly properties
+Because one layer is secure, does not guarantee that the system underneath is secure.
+Exploit is ”code” that runs on a ”weird machine”, in its ”weird instructions",
+Programming Reuse,"“setting up, instantiating, and programming the weird machine.”
+The fact is that correctness proofs of program verification—the best weapon we have against unexpected execution—are brittle with respect to any violations of their preconditions.
+Do “small” variations of P by some metric result in“small” changes in R? Is there an efficient way to perform such “differential analysis” for certain classes of code Q? 
+Secondly, exploits are unexpected computations, “impossible” within the programmer’s abstractions.
+it is natural for programmers to believe that all other addresses are not exposed
+and will not be revealed by the OS.",
