@@ -1,6 +1,4 @@
-***
 
-```markdown
 # Weird Machine Gadgets
 
 A Python library for constructing **weird machines** — emergent computational systems built from the composition of **architectural gadgets** in cyber-physical and control systems. The library provides a framework to explore how low-level protocol primitives, such as Modbus function codes, can be combined to form computational logic without deploying any software on embedded targets.
@@ -148,6 +146,26 @@ python3 -m weird_machine_gadgets.examples.simple_average_example
 
 ```
 
+---
+
+## Educational Use
+
+Weird Machine Gadgets is an instructional and research framework designed for:
+
+- Cyber-physical system security education  
+- Industrial protocol behavior analysis  
+- Emergent computation theory demonstrations  
+- Safe experimentation with control system computation  
+
+### Learning Objectives
+Students and researchers learn to:
+1. Compose protocol operations into computation.
+2. Recognize architecture-level computation.
+3. Understand how unintended programmability emerges.
+4. Identify and defend against control-plane weird machines.
+
+---
+
 ## API Reference
 
 ### ProtocolGadget
@@ -195,7 +213,6 @@ class ConditionalExecutor(protocol: ProtocolGadget)
 - `add_condition(register, threshold, comparison, action)`  
 - `check_conditions()`  
 - `monitor(interval, duration)`  
-```
 
+---
 
-***
