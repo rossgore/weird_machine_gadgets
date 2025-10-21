@@ -1,0 +1,225 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WEIRD MACHINES - ODU Test Bed</title>
+  <link rel="stylesheet" href="https://stackedit.io/style.css" />
+</head>
+
+<body class="stackedit">
+  <div class="stackedit__html"><h1 id="building-weird-machines-from-wind-turbines-how-our-testbed-creates-unintended-computation">Building Weird Machines from Wind Turbines: How Our Testbed Creates Unintended Computation</h1>
+<p>When most people think about cybersecurity vulnerabilities in wind energy systems, they imagine hackers breaking into SCADA networks or exploiting software bugs in control systems. But what if the very architecture of these systems—the combination of sensors, controllers, and communication protocols—could spontaneously create new computational devices that were never intended to exist?</p>
+<p>This is the world of “weird machines,” and our wind energy testbed at Old Dominion University has become an unexpected laboratory for studying how these unintended computational systems emerge from the interaction of industrial control components.</p>
+<h2 id="what-are-weird-machines">What Are Weird Machines?</h2>
+<p>The term “weird machine” was coined by cybersecurity researcher Sergey Bratus to describe computational systems that emerge when you can get a system to interpret data as instructions outside its intended operation. The classic example is return-oriented programming (ROP), where attackers chain together fragments of existing code to create entirely new programs without writing a single line of new code.</p>
+<p>But weird machines aren’t limited to software exploits. Our research has discovered that they can emerge from the architectural components of cyber-physical systems—the very building blocks that control wind turbines, manage power grids, and operate industrial facilities.</p>
+<h2 id="the-odu-wind-energy-testbed-an-accidental-weird-machine-factory">The ODU Wind Energy Testbed: An Accidental Weird Machine Factory</h2>
+<p>Our testbed wasn’t designed to create weird machines—it was built to study wind energy control systems in a safe, educational environment. It includes:</p>
+<ul>
+<li><strong>3D-printed wind turbines</strong> with Arduino-controlled motors</li>
+<li><strong>Industrial PLCs</strong> from Siemens, Schneider Electric, and Omron</li>
+<li><strong>Raspberry Pi running OpenPLC</strong> for programmable control</li>
+<li><strong>Multi-protocol communication</strong>: Modbus TCP, OPC UA, PROFINET, MQTT, and REST APIs</li>
+<li><strong>Advanced security</strong>: X.509 certificates, Self-Sovereign Identity credentials, Python-based authentication</li>
+</ul>
+<p>What makes this interesting from a weird machine perspective is the <strong>heterogeneity</strong>. We have consumer electronics (Arduino), industrial equipment (PLCs), open-source software (OpenPLC), and enterprise systems (SCADA) all communicating through multiple protocols. This creates a rich computational substrate where unintended behaviors can emerge.</p>
+<h2 id="the-architectural-gadgets-building-blocks-of-weird-machines">The Architectural Gadgets: Building Blocks of Weird Machines</h2>
+<p>Through our analysis, we’ve identified four main classes of “architectural gadgets” in the testbed—computational primitives that can compose into more complex (and unintended) behaviors:</p>
+<h3 id="protocol-processing-gadgets-ppg">1. Protocol Processing Gadgets (PPG)</h3>
+<p>The Modbus protocol used throughout our testbed has 16 function codes (FC01-FC16) that act like opcodes in a computer’s instruction set:</p>
+<ul>
+<li><strong>FC03</strong> (Read Holding Registers) = Memory read operation</li>
+<li><strong>FC06</strong> (Write Single Register) = Memory write operation</li>
+<li><strong>FC01</strong> (Read Coils) = Boolean read operation</li>
+<li><strong>FC05</strong> (Write Single Coil) = Boolean write operation</li>
+</ul>
+<p>These aren’t just communication primitives—they’re computational primitives. Any system that can send Modbus commands can perform memory operations and boolean logic.</p>
+<h3 id="control-logic-gadgets-clg">2. Control Logic Gadgets (CLG)</h3>
+<p>The Arduino wind speed processor and Raspberry Pi RPM monitor implement control logic that can be viewed as computational elements:</p>
+<ul>
+<li><strong>Conditional execution</strong>: <code>IF wind_speed &gt; threshold THEN change_state</code></li>
+<li><strong>Arithmetic operations</strong>: Power calculation using <code>P = 0.5 × ρ × A × v³ × Cp</code></li>
+<li><strong>State machines</strong>: Transitions between STARTUP, RUNNING, SHUTDOWN, and FAULT states</li>
+<li><strong>Iterative optimization</strong>: TSR-based pitch control algorithms</li>
+</ul>
+<h3 id="communication-bridge-gadgets-cbg">3. Communication Bridge Gadgets (CBG)</h3>
+<p>The testbed’s protocol translation systems create opportunities for computational composition:</p>
+<ul>
+<li>Arduino sends data via Modbus</li>
+<li>Raspberry Pi translates to OPC UA</li>
+<li>SCADA aggregates multiple protocols</li>
+<li>Each translation step can perform data transformation</li>
+</ul>
+<h3 id="security-processing-gadgets-spg">4. Security Processing Gadgets (SPG)</h3>
+<p>The authentication system includes computational elements:</p>
+<ul>
+<li>X.509 certificate chain validation (complex decision trees)</li>
+<li>Cryptographic signature verification (mathematical operations)</li>
+<li>Challenge-response protocols (state machines)</li>
+</ul>
+<h2 id="a-practical-weird-machine-the-covert-controller">A Practical Weird Machine: The Covert Controller</h2>
+<p>Here we provide a concrete example of how these gadgets can compose into a weird machine that performs computation completely outside the intended system design. To understand this, we need to start with a quick primer on how industrial systems actually work.</p>
+<h3 id="a-quick-primer-understanding-industrial-control-systems">A Quick Primer: Understanding Industrial Control Systems</h3>
+<p>Before we dive into building a weird machine, let’s demystify some industrial control terminology:</p>
+<p><strong>What are Registers?</strong><br>
+Think of registers like numbered mailboxes in a post office. Each “mailbox” (register) has an address (like 40001) and can hold a number. In industrial systems, these registers store important values like sensor readings, control settings, or operational parameters. For example, Register 40001 might hold the current wind speed value, while Register 40002 might store the turbine’s power output.</p>
+<p><strong>What are Coils?</strong><br>
+Coils are simpler than registers—they’re just on/off switches (TRUE or FALSE). The name comes from electromagnetic relay coils used in older industrial equipment. Today they’re digital, but the name stuck. Coil 10001 might represent “turbine is running” (TRUE) or “turbine is stopped” (FALSE).</p>
+<p><strong>What is Modbus?</strong><br>
+Modbus is the language that industrial devices use to talk to each other. It’s like a simple conversation protocol:</p>
+<ul>
+<li>“Hey, what value is in Register 40001?” (that’s a READ operation)</li>
+<li>“The value is 850” (the response)</li>
+<li>“Okay, change Register 40001 to 1500” (that’s a WRITE operation)</li>
+<li>“Done!” (confirmation)</li>
+</ul>
+<p>The critical insight is that these operations—reading and writing numbers to memory locations—are exactly what computer programs do. Modbus wasn’t designed to be a programming language, but it accidentally has all the building blocks of one.</p>
+<h3 id="the-setup-building-a-hidden-state-machine">The Setup: Building a Hidden State Machine</h3>
+<p>Imagine an attacker (or researcher) who wants to create a covert control system that operates within the testbed without triggering any alarms. They can’t modify software or inject malicious code—all they can do is send legitimate Modbus commands and observe responses.</p>
+<p>Here’s how they build a weird machine from our architectural gadgets:</p>
+<p><strong>Step 1: Using Modbus as Memory</strong></p>
+<p>Remember those registers we talked about? The attacker realizes they can use them like variables in a program:</p>
+<pre><code>FC03 (Read Register 40001) = Read memory location M1
+FC06 (Write Register 40001, value=1500) = Write 1500 to location M1
+FC01 (Read Coil 10001) = Read boolean flag B1
+FC05 (Write Coil 10001, true) = Set flag B1
+</code></pre>
+<p><strong>What’s actually happening here:</strong></p>
+<ul>
+<li>The attacker sends a FC03 command: “What number is stored at address 40001?”</li>
+<li>The system responds: “850”</li>
+<li>The attacker sends a FC06 command: “Change address 40001 to 1500”</li>
+<li>The system responds: “Done”</li>
+</ul>
+<p>This is equivalent to writing <code>x = 850</code> and then <code>x = 1500</code> in a programming language. The attacker is essentially writing a program by manipulating the system’s memory—but they’re doing it through legitimate industrial communication protocols that the system is designed to accept.</p>
+<p><strong>Step 2: Encoding State in Wind Speed Values</strong></p>
+<p>The potentiometer that simulates wind speed outputs values from 0-1023 (a standard range for analog sensors). The attacker realizes they can use specific wind speed values as a secret code:</p>
+<pre><code>Wind_speed = 512 → State 0 (neutral)
+Wind_speed = 768 → State 1 (armed)  
+Wind_speed = 256 → State 2 (executing)
+Wind_speed = 1023 → State 3 (complete)
+</code></pre>
+<p><strong>What’s actually happening here:</strong><br>
+Instead of just reading “the wind speed is 12.5 meters per second,” the attacker assigns special meaning to certain values. When they see wind speed = 768 in the registers, they know the system is in “armed” state, ready to execute their covert commands. It’s like using the number of times you cough in a conversation to send secret signals—the communication channel was meant for one purpose (wind measurement) but is being repurposed for another (state signaling).</p>
+<p><strong>Step 3: Leveraging Control Logic for Computation</strong></p>
+<p>The RPM threshold monitor is built into the system’s safety logic: if the turbine spins faster than 35 RPM, shut it down to prevent damage. The attacker realizes this is a conditional statement they can exploit:</p>
+<pre><code>IF RPM &gt; 35 THEN SHUTDOWN
+→ This is a built-in IF-THEN statement we can exploit
+</code></pre>
+<p><strong>What’s actually happening here:</strong><br>
+The attacker can’t change this safety logic (it’s programmed into the Raspberry Pi controller), but they CAN control what makes the turbine speed up or slow down. By manipulating the wind speed (which they control through the potentiometer values in the registers), they can deliberately make the RPM cross that 35 threshold, triggering the shutdown command. It’s like knowing someone has programmed their home security system to lock all doors at 10 PM—you can’t change that rule, but you can manipulate what time the system thinks it is.</p>
+<p>By manipulating the wind speed (which affects RPM), the attacker can trigger conditional logic paths without writing any code.</p>
+<p><strong>Step 4: Protocol Translation as Data Transformation</strong></p>
+<p>The testbed has a bridge that automatically translates between different communication protocols. When you write to a Modbus register, it gets translated to an OPC UA node (a different industrial protocol):</p>
+<pre><code>Modbus Register 40001:850 → OPC UA node "ns=2;i=41001:850"
+</code></pre>
+<p><strong>What’s actually happening here:</strong><br>
+Think of this like a translator converting “hello” to “hola” to “bonjour.” Each translation step involves some computation—changing data formats, applying scaling factors, maybe adding checksums. The attacker realizes they can chain multiple translations together, and each step performs a tiny bit of computation on their data.</p>
+<p>For example:</p>
+<ol>
+<li>Write 100 to Modbus Register 40001</li>
+<li>The bridge multiplies by 10 and translates to OPC UA (now it’s 1000)</li>
+<li>Another bridge adds 23 and translates to MQTT (now it’s 1023)</li>
+<li>The final value has been computed: 100 → 1000 → 1023</li>
+</ol>
+<p>The attacker is using the protocol translation bridges like a chain of functions in a program, where each bridge is doing a small calculation that adds up to a larger computation.</p>
+<p>Each translation applies a mathematical transformation that can be used for computation. Chaining multiple translations creates a computational pipeline.</p>
+<h3 id="the-weird-machine-in-action">The Weird Machine in Action</h3>
+<p>Now let’s put it all together. Combining these gadgets, here’s a practical weird machine that implements a <strong>covert timer system</strong>:</p>
+<p><strong>Goal</strong>: Execute a specific motor command exactly 10 control cycles after receiving a trigger, without modifying any software.</p>
+<p>To understand why this is remarkable, realize that the attacker is essentially programming a countdown timer (like a time bomb in the movies) using only the industrial control system’s normal communication protocols. They can’t install software, they can’t modify configuration files—all they can do is send commands that the system is designed to accept.</p>
+<p><strong>Implementation</strong>:</p>
+<ol>
+<li>
+<p><strong>Initialization</strong>: Write counter value to Register 40001 using FC06</p>
+<ul>
+<li><em>Translation: The attacker sends a Modbus command saying “Set Register 40001 to the value 10”</em></li>
+<li><em>This is like declaring a variable: <code>countdown = 10</code></em></li>
+</ul>
+</li>
+<li>
+<p><strong>Trigger</strong>: Set Coil 10001 to TRUE using FC05 (starts the timer)</p>
+<ul>
+<li><em>Translation: The attacker sends a command saying “Turn Coil 10001 ON”</em></li>
+<li><em>This is like declaring a flag: <code>timer_active = TRUE</code></em></li>
+</ul>
+</li>
+<li>
+<p><strong>Counting Loop</strong>:</p>
+<ul>
+<li>
+<p>Each control cycle, read Register 40001 (FC03)</p>
+<ul>
+<li><em>Translation: Every time the control system runs its main loop (about 100 times per second), the attacker checks what number is in Register 40001</em></li>
+<li><em>This is like the condition in a while loop: <code>while (countdown &gt; 0)</code></em></li>
+</ul>
+</li>
+<li>
+<p>Subtract 1 from the value</p>
+<ul>
+<li><em>Translation: The attacker reads the current value, subtracts 1 from it using their own computation, then…</em></li>
+</ul>
+</li>
+<li>
+<p>Write back using FC06</p>
+<ul>
+<li><em>Translation: …writes the new value back to the register</em></li>
+<li><em>This is like: <code>countdown = countdown - 1</code></em></li>
+</ul>
+</li>
+<li>
+<p>Read Coil 10001 to check if still active (FC01)</p>
+<ul>
+<li><em>Translation: The attacker checks if the timer is still supposed to be running</em></li>
+<li><em>This is like checking: <code>if (timer_active == TRUE) continue; else stop;</code></em></li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Execution</strong>: When counter reaches 0, perform target action:</p>
+<ul>
+<li>
+<p>Set wind speed to specific value (triggers RPM change)</p>
+<ul>
+<li><em>Translation: The attacker writes a specific value to the wind speed register that they know will cause the turbine to speed up</em></li>
+</ul>
+</li>
+<li>
+<p>RPM crosses threshold (triggers control logic)</p>
+<ul>
+<li><em>Translation: As the turbine speeds up, the RPM exceeds 35, which triggers the built-in safety logic</em></li>
+</ul>
+</li>
+<li>
+<p>System executes motor command (the hidden payload)</p>
+<ul>
+<li><em>Translation: The safety shutdown engages, which causes motors to activate, blades to adjust, or whatever action the attacker wanted to trigger</em></li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+<p><strong>What makes this a weird machine?</strong></p>
+<ul>
+<li><strong>No custom software was written</strong> - Everything uses the system’s existing Modbus protocol</li>
+<li><strong>All operations use legitimate commands</strong> - Every FC03, FC05, FC06 command is something the system is designed to accept</li>
+<li><strong>The computation emerges from the composition of architectural gadgets</strong> - Reading registers + writing registers + control logic + timing = a complete program</li>
+<li><strong>The system is Turing complete</strong> - You could theoretically implement any algorithm this way (loops, conditionals, memory operations, arithmetic)</li>
+</ul>
+<h3 id="why-this-matters">Why This Matters</h3>
+<p>To put this in perspective, imagine if your home thermostat had a weird machine. Someone could potentially:</p>
+<ul>
+<li>Use the temperature sensor readings as variables in a program</li>
+<li>Use the heating/cooling commands as conditional logic</li>
+<li>Use the scheduling system as a timing mechanism</li>
+<li>Build a complete hidden computer inside your HVAC system—all without installing any software</li>
+</ul>
+<p>That’s essentially what’s happening in our wind turbine testbed. The system is designed to control turbines, but the architectural components can be repurposed to perform arbitrary computation. It’s computation hiding in plain sight, using legitimate industrial protocols for unintended purposes.</p>
+<p>Every complex cyber-physical system with multiple controllers and communication protocols potentially harbors weird machines waiting to emerge.</p>
+</div>
+</body>
+
+</html>
