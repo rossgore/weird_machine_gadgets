@@ -246,3 +246,6 @@ class ConditionalExecutor:
 
 __version__ = "0.3.0-sim"
 __all__ = ["ProtocolGadget", "ControlGadget", "StateMachine", "ConditionalExecutor"]
+
+#Also make SimpleWeirdMachine Available
+from weird_machine_gadgets.simple import SimpleWeirdMachine
