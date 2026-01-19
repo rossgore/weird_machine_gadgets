@@ -16,6 +16,7 @@ By the end, you'll have:
 
 ### Step 0: Environment Preparation
 
+```bash
 pip install --upgrade pip
 
 # PyTorch (CPU version)
@@ -31,7 +32,7 @@ pip install peft bitsandbytes
 
 # Utilities
 pip install scikit-learn tqdm
-```
+
 
 **What each package does:**
 - `torch` – Deep learning framework
