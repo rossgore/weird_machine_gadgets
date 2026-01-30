@@ -1,14 +1,31 @@
-# Fine-Tuning a Large Language Model to Identify Weird Machine Gadgets
+# Multi-Model Ensemble Training for Weird Machine Gadget Classification
 
-### Introduction
+## Memory-Optimized for Apple Silicon Macs
 
-In this guide, you'll learn how to fine-tune a small language model (`google/flan-t5-small`) to identify weird machine gadgets. 
+---
 
-By the end, you'll have:
-- A trained model that can read a gadget description and identify its type, location, and explanation
-- An understanding of the data preparation → tokenization → training → evaluation pipeline.
-- Experience with Hugging Face's popular ecosystem tools
-- A template you can adapt for other classification or generation tasks
+## Introduction
+
+In this guide, you'll learn how to fine-tune **two small language models** on weird machine gadget identification and compare their predictions through ensemble agreement analysis.
+
+**Why 2 models?**
+- **Architectural diversity**: Compare seq2seq (encoder-decoder) vs causal (decoder-only) architectures
+- **Training paradigm diversity**: Instruction-tuned vs general pre-training
+- **Memory efficiency**: Both models fit comfortably in 6-8GB unified memory on Apple Silicon
+- **Agreement analysis**: Identify where models agree (high confidence) vs disagree (ambiguous cases)
+
+### Models Trained:
+1. **FLAN-T5-small** (77M params) - Encoder-decoder, instruction-tuned T5
+2. **DistilGPT2** (82M params) - Decoder-only, distilled from GPT-2
+
+### By the end, you'll have:
+- Two trained models with different architectures
+- An ensemble comparison report showing agreement/disagreement patterns
+- Insights into which examples are "easy" (full agreement) vs "hard" (disagreement)
+- Understanding of inter-model agreement as a confidence metric
+- A template for multi-model ensemble research
+
+**Expected time to complete:** ~25 minutes training + 2 minutes comparison
 
 ---
 
@@ -16,10 +33,12 @@ By the end, you'll have:
 
 ### Step 0: Environment Preparation
 
+#### 0.1 Install required packages
+
 ```bash
 pip install --upgrade pip
 
-# PyTorch (CPU version)
+# PyTorch (CPU version - memory-optimized)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # Hugging Face ecosystem
@@ -27,22 +46,20 @@ pip install transformers[torch]
 pip install datasets
 pip install accelerate
 
-# Optional (for future LoRA experiments)
-pip install peft bitsandbytes
-
 # Utilities
 pip install scikit-learn tqdm
-
+```
 
 **What each package does:**
-- `torch` – Deep learning framework
+- `torch` – Deep learning framework (CPU-only to avoid memory issues)
 - `transformers` – Hugging Face models and training utilities
 - `datasets` – Load and process JSONL files efficiently
 - `accelerate` – Distributed training utilities (used by Trainer)
-- `peft`, `bitsandbytes` – Parameter-efficient fine-tuning (LoRA, QLoRA)
 - `scikit-learn`, `tqdm` – Metrics and progress bars
 
-#### 0.4 Verify installation
+**Installation time:** ~5–10 minutes on first run
+
+#### 0.2 Verify installation
 
 ```bash
 python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
@@ -52,783 +69,770 @@ python -c "import datasets; print(f'Datasets version: {datasets.__version__}')"
 
 You should see version numbers. If you see errors, check that your virtual environment is activated.
 
+#### 0.3 Verify dataset location
 
----
-
-## Running the Script
-
-Save the provided `fine-tune-llms.py` script in your project root, then run:
-
-```bash
-python fine-tune-llms.py
-```
-
-Below, we'll walk through what happens at each step.
-
----
-
-## Step-by-Step Walkthrough
-
-### STEP 1: Checking the Dataset File
-
-```
-================================================================================
-STEP 1: Checking dataset file...
-================================================================================
-✓ Found data/weird_machine_gadgets.jsonl
-```
-
-**What's happening:**
-
-The script checks that your JSONL file exists and counts the number of examples. Each line in the JSONL file is a JSON object with:
-- `instruction`: Task description (e.g., "Identify weird machine ARITHMETIC/COMPUTATION gadgets...")
-- `input`: An excerpt from a manual or specification
-- `output`: The desired model output (gadget_type, location, explanation)
-- `manual_name`, `manual_url`: Metadata
-
-**In the script:** Lines 35–50 in `fine_tune_gadgets.py`
-
-**What to look for:**
-- Make sure the line count matches your expectations
-- If you get "FileNotFoundError", double-check that `data/weird_machine_gadgets.jsonl` exists
-
----
-
-### STEP 2: Device Information
-
-```
-================================================================================
-DEVICE INFORMATION
-================================================================================
-✓ Running on CPU (as expected)
-✓ CPU cores available: 8
-✓ Using 2 processes for data loading
-✓ PyTorch version: 2.2.2
-```
-
-**What's happening:**
-
-The script checks which device will run training. For this guide, we've forced CPU usage because it's reliable and most laptops have enough CPU cores for reasonable performance.
-
-Key metrics:
-- **CPU cores available**: Used for parallel data loading (script uses 2 to be conservative)
-- **PyTorch version**: Should be 2.0+
-
-**In the script:** Lines 80–102
-
-**Why CPU?**
-- CPU training is slower but:
-  - Works on any laptop without GPU
-  - No GPU memory constraints (can fit larger batches on newer hardware)
-  - Easier to debug
-  - Reproducible across systems
-
----
-
-### STEP 3: Loading the Dataset
-
-```
-================================================================================
-STEP 3: Loading dataset from JSONL...
-================================================================================
-  Loading...
-✓ Loaded examples
-
- Example 0:
-  instruction: Identify weird machine ARITHMETIC/COMPUTATION gadgets in the excerpt...
-  input: The S7-1200 basic instructions include ADD blocks...
-  output: gadget_type: Arithmetic/Computation gadget; location: ADD instruction blocks...
-```
-
-**What's happening:**
-
-The script uses the `datasets` library to load your JSONL file into memory. This library is efficient and handles large files well.
-
-The first example is printed so you can inspect the data structure.
-
-**In the script:** Lines 114–131
-
-**Things to check:**
-- Do the examples look reasonable?
-- Is the output format consistent (gadget_type; location; explanation)?
-- Does the instruction describe what you want the model to learn?
-
----
-
-### STEP 4: Creating Prompts and Subsampling
-
-```
-================================================================================
-STEP 4: Creating prompts and subsampling...
-================================================================================
-  Creating prompts...
-✓ Added prompt field to all 100 examples
-✓ Subsampled to 100 examples for training
-
- Example prompt:
-Task: Identify weird machine COMMUNICATION-BRIDGE gadgets...
-Excerpt: The document describes how devices may implement vendor-specific scaling...
-Answer:
-
- Example output:
-gadget_type: Communication-Bridge gadget; location: Vendor-defined integer scaling...
-```
-
-**What's happening:**
-
-1. **Prompt creation**: The script combines `instruction` and `input` into a single prompt that will be fed to the model. The prompt template is:
-
-   ```
-   Task: {instruction}
-   
-   Excerpt:
-   {input}
-   
-   Answer:
-   ```
-
-   This tells the model: "Here's a task. Here's an excerpt. Now generate an answer."
-
-2. **Subsampling**: For faster iteration on your laptop, the script subsamples the data. This is controlled by:
-
-   ```python
-   TOTAL_EXAMPLES_TO_USE = 100  # Change this to 200, 500, etc.
-   ```
-
-**In the script:** Lines 143–164
-
-**How to adjust for more data:**
-
-```python
-# At the top of the script (around line 26):
-TOTAL_EXAMPLES_TO_USE = 100  # ← Change this
-
-# Options:
-TOTAL_EXAMPLES_TO_USE = 50    # Very fast (~5 min per epoch), lower quality
-TOTAL_EXAMPLES_TO_USE = 200   # Medium (~20 min per epoch)
-TOTAL_EXAMPLES_TO_USE = 500   # Slow (~50 min per epoch), better quality
-TOTAL_EXAMPLES_TO_USE = 1000  # Very slow (~2 hours per epoch), best quality
-```
-
-After you verify the pipeline works at 100 examples, try 200, then 500.
-
----
-
-### STEP 5: Train/Validation Split
-
-```
-================================================================================
-STEP 5: Splitting into train/validation...
-================================================================================
-✓ Train: 90 examples
-✓ Validation: 10 examples
-```
-
-**What's happening:**
-
-The dataset is split into:
-- **Train set (90%)**: Used to update the model's weights during training
-- **Validation set (10%)**: Used to evaluate the model during training (not used to update weights)
-
-This prevents **overfitting**: the model memorizing the training data without learning generalizable patterns.
-
-**In the script:** Lines 177–184
-
-**Standard ML practice:**
-- Train: 80–90%
-- Validation: 10–20%
-- Test: (held out, we use validation as a proxy)
-
----
-
-### STEP 6: Loading Model and Tokenizer
-
-```
-================================================================================
-STEP 6: Loading model and tokenizer...
-================================================================================
-  Model: google/flan-t5-small
-  Max input length: 512
-  Max target length: 256
-✓ Model loaded: T5ForConditionalGeneration
-✓ Tokenizer loaded: T5TokenizerFast
-  Model parameters: 76,961,152
-```
-
-**What's happening:**
-
-1. **Tokenizer**: Converts text into numbers. FLAN-T5 uses a SentencePiece tokenizer that breaks text into subword tokens (~30K vocab).
-
-2. **Model**: Downloads `google/flan-t5-small` from Hugging Face Hub (~250 MB). This is a **conditional generation** model (encoder-decoder):
-   - **Encoder**: Reads the input prompt and builds a context representation
-   - **Decoder**: Generates the output (gadget description) token-by-token
-
-3. **Model size**: 77M parameters (small enough for a laptop)
-
-**In the script:** Lines 197–209
-
-**First run only:**
-- Model download takes 2–5 minutes
-- Subsequent runs use the cached version
-- Cache location: `~/.cache/huggingface/hub/`
-
-**Understanding the architecture:**
-
-```
-Input: "Task: Identify gadgets...Excerpt: The MMXU node..."
-       ↓
-    Tokenizer (text → tokens)
-       ↓
-    Encoder (T5 transformer)
-       ↓
-    Context representation (vector)
-       ↓
-    Decoder (generates output token-by-token)
-       ↓
-    Output: "gadget_type: Read/Write gadget; location: MMXU..."
-```
-
----
-
-### STEP 7: Tokenizing Datasets
-
-```
-================================================================================
-STEP 7: Tokenizing datasets...
-================================================================================
-  Tokenizing train dataset...
-  Tokenizing validation dataset...
-✓ Tokenized train: 90 examples
-✓ Tokenized validation: 10 examples
-```
-
-**What's happening:**
-
-Each example is converted:
-- **Input prompt** → token IDs (up to 512 tokens)
-- **Output text** → token IDs (up to 256 tokens)
-
-Longer texts are truncated; shorter texts are padded with a special token.
-
-**In the script:** Lines 222–262
-
-**Customization:**
-
-```python
-MAX_INPUT_LENGTH = 512    # ← Change if excerpts are too long
-MAX_TARGET_LENGTH = 256   # ← Change if outputs exceed this
-```
-
-**If you see truncation warnings:** Increase the max lengths, but keep in mind that longer sequences use more memory and slow down training.
-
----
-
-### STEP 8: Training Arguments
-
-```
-================================================================================
-STEP 8: Setting up training arguments (CPU-optimized)...
-================================================================================
-✓ Training arguments configured:
-  Output directory: checkpoints/flan-t5-small-gadgets
-  Train batch size: 1
-  Gradient accumulation steps: 4
-  Effective batch size: 4
-  Eval batch size: 1
-  Learning rate: 5e-05
-  Epochs: 3
-  Device: CPU (no GPU)
-```
-
-**What's happening:**
-
-The `Seq2SeqTrainingArguments` object configures how the model will be trained:
-
-- **Batch size**: How many examples to process before updating weights
-- **Gradient accumulation**: Process 1 example at a time, accumulate gradients from 4 steps, then update (simulates batch_size=4)
-- **Learning rate**: How big a step to take when updating weights
-- **Epochs**: How many times to loop through the entire training set
-- **Evaluation strategy**: Evaluate every `eval_steps` steps
-
-**In the script:** Lines 275–310
-
-**To scale up (after verifying the pipeline):**
-
-```python
-# Around line 20–26:
-TRAIN_BATCH_SIZE = 1              # Keep at 1 for CPU
-GRADIENT_ACCUMULATION_STEPS = 4   # Or try 8 for larger effective batch
-LEARNING_RATE = 5e-5              # Try 1e-4 or 1e-5
-NUM_EPOCHS = 3                    # Try 5 or 10
-```
-
-**Understanding batch size on CPU:**
-- Batch size 1 = update weights after each example (noisy but fast)
-- Gradient accumulation = compute gradients for 4 examples, then update once (smoother, similar speed)
-- On CPU, keep batch size 1; accumulate 4–8 steps
-
----
-
-### STEP 9: Data Collator
-
-```
-================================================================================
-STEP 9: Creating data collator...
-================================================================================
-✓ Data collator created (pads to multiples of 8 for CPU efficiency)
-```
-
-**What's happening:**
-
-The data collator is a helper that:
-1. **Batches examples**: Takes individual tokenized examples and groups them
-2. **Pads to same length**: Adds padding tokens so all examples in a batch have the same length
-3. **CPU optimization**: Pads to multiples of 8 (CPU vector operations are optimized for 8-element chunks)
-
-**In the script:** Lines 313–318
-
----
-
-### STEP 10: Training
-
-```
-================================================================================
-STEP 10: Creating Trainer and fine-tuning...
-================================================================================
- This will take a few minutes. Please wait...
-
-  Starting training...
-{'loss': 4.8273, 'grad_norm': 5.3005, 'learning_rate': 5e-06, 'epoch': 0.09}
-{'loss': 4.3531, 'grad_norm': 3.5569, 'learning_rate': 1.5e-05, 'epoch': 0.18}
-...
-{'train_runtime': 116.2788, 'train_samples_per_second': 2.322, 'train_steps_per_second': 0.593, 'train_loss': 3.8269, 'epoch': 3.0}
-
-✓ Training complete!
-  Final train loss: 3.8269
-```
-
-**What's happening:**
-
-This is where the actual learning occurs. For each epoch:
-
-1. **Forward pass**: Feed a batch of prompts through the model to generate predictions
-2. **Compute loss**: Measure how far predictions are from the gold outputs
-3. **Backward pass**: Compute gradients (how much to adjust each weight)
-4. **Update weights**: Adjust weights using the learning rate
-
-**Reading the logs:**
-
-- `loss`: Lower is better. You should see it decrease as training progresses.
-- `grad_norm`: Magnitude of gradients. Usually 1–10 is healthy.
-- `learning_rate`: Decreases over time (scheduled warmup and decay)
-- `epoch`: Current progress (0.09 = 9% through epoch 1)
-
-**In the script:** Lines 320–328
-
-**Monitor these metrics:**
-- **Loss should decrease**: 4.8 → 3.8 is good (27% improvement)
-- **If loss increases**: Learning rate might be too high; try `LEARNING_RATE = 1e-5`
-- **If loss plateaus**: Increase `NUM_EPOCHS` or `TOTAL_EXAMPLES_TO_USE`
-
-**On a CPU laptop:**
-- ~100 examples × 3 epochs ≈ 2 minutes total
-- ~200 examples × 3 epochs ≈ 5 minutes total
-- ~500 examples × 3 epochs ≈ 15 minutes total
-
----
-
-### STEP 11: Saving the Model
-
-```
-================================================================================
-STEP 11: Saving model...
-================================================================================
-✓ Model saved to: checkpoints/flan-t5-small-gadgets/final_model
-```
-
-**What's happening:**
-
-The fine-tuned model is saved to disk so you can use it later without re-training.
-
-Files saved:
-- `config.json` – Model architecture
-- `pytorch_model.bin` – Weights
-- `tokenizer.json` – Vocabulary and tokenizer logic
-- `special_tokens_map.json` – Special tokens (padding, end-of-sequence, etc.)
-
-**In the script:** Lines 336–341
-
-**To load the model later:**
-
-```python
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-
-tokenizer = AutoTokenizer.from_pretrained('checkpoints/flan-t5-small-gadgets/final_model')
-model = AutoModelForSeq2SeqLM.from_pretrained('checkpoints/flan-t5-small-gadgets/final_model')
-
-# Generate predictions
-prompt = "Task: ... Excerpt: ... Answer:"
-inputs = tokenizer(prompt, return_tensors="pt")
-outputs = model.generate(**inputs, max_new_tokens=256)
-print(tokenizer.decode(outputs[0], skip_special_tokens=True))
-```
-
----
-
-### STEP 12: Testing on Validation Examples
-
-```
-================================================================================
-STEP 12: Testing on held-out validation examples...
-================================================================================
-
- Sample predictions on 3 validation examples:
-
-  ⏳ Generating prediction 1/3...
-
-================================================================================
-EXAMPLE 1:
-================================================================================
-
-INSTRUCTION:
-  Identify weird machine COMMUNICATION-BRIDGE gadgets for Logix 5000...
-
-EXCERPT:
-  ControlNet bridge modules can route produced and consumed tags between...
-
-GOLD OUTPUT:
-  gadget_type: Communication-Bridge gadget; location: ControlNet bridge routing...
-
-MODEL OUTPUT:
-  gadget_type: Logix 5000 and EtherNet/IP gadgets are in the category of...
-
-FORMAT CHECK: ✗
-  - gadget_type: ✓
-  - location: ✗
-  - explanation: ✗
-```
-
-**What's happening:**
-
-The script tests the fine-tuned model on 3 unseen validation examples. For each:
-
-1. **INSTRUCTION**: The task description
-2. **EXCERPT**: The manual excerpt
-3. **GOLD OUTPUT**: The correct answer (from your dataset)
-4. **MODEL OUTPUT**: What the model generated
-5. **FORMAT CHECK**: Whether the output contains `gadget_type:`, `location:`, and `explanation:`
-
-**In the script:** Lines 345–410
-
-**Interpreting results:**
-
-| Scenario | What it means | What to do |
-|----------|--------------|-----------|
-| Model output matches gold (mostly) | Model learned well! | Increase `TOTAL_EXAMPLES_TO_USE` and train again |
-| Output has correct format but wrong details | Model learning to structure, needs more examples | Try 500–1000 examples |
-| Output is gibberish or loops (Example 3 above) | Not enough training data or learning rate issues | Reduce `LEARNING_RATE` to 1e-5 or increase examples |
-| Output is reasonable but not perfect | Normal at 100 examples; expected behavior | Scale up to 500+ examples |
-
-**Example 1 analysis (poor):**
-- The model outputs gibberish, not the expected format
-- With only 100 examples, this is expected
-- Solution: Increase to 500 examples and retrain
-
-**Example 2 analysis (good):**
-- Format check passes ✓
-- Output is reasonable (mentions polynomial approximation)
-- A bit garbled but shows the model understood the task
-
-**Example 3 analysis (poor):**
-- Model repeats "GIFT-based solution" over and over
-- Classic sign of insufficient training data or divergence
-- Solution: Same as Example 1—scale to more data
-
----
-
-### STEP 13: Summary and Next Steps
-
-```
-NEXT STEPS:
-1. Review predictions above and check model output quality.
-2. Gradual scaling:
-   - First: Try TOTAL_EXAMPLES_TO_USE = 200 (if step 1 succeeds)
-   - Then: Try TOTAL_EXAMPLES_TO_USE = 500
-   - Finally: Try TOTAL_EXAMPLES_TO_USE = 1000+ (may take 30+ min per epoch)
-3. Experiment with hyperparameters:
-   - LEARNING_RATE (try 1e-4, 1e-5)
-   - NUM_EPOCHS (try 5, 10)
-4. For faster iteration, reduce MAX_INPUT_LENGTH or MAX_TARGET_LENGTH
-```
-
----
-
-## Scaling Up: The Next Phases
-
-### Phase 2: Medium Dataset (200–500 examples)
-
-After confirming the pipeline works at 100 examples, try:
-
-```python
-# fine_tune_gadgets.py, around line 26:
-TOTAL_EXAMPLES_TO_USE = 200  # or 300, 500
-
-# Optionally increase epochs:
-NUM_EPOCHS = 5
-```
-
-**Expected improvements:**
-- Better quality outputs (fewer gibberish sequences)
-- More consistent format adherence
-- Better generalization to new excerpts
-
-**Expected training time:**
-- 200 examples, 5 epochs on CPU: ~15 minutes
-
----
-
-### Phase 3: Hyperparameter Tuning
-
-Once you have decent results, experiment:
-
-**Try lower learning rate:**
-```python
-LEARNING_RATE = 1e-5  # (default is 5e-5)
-```
-
-**Try more epochs:**
-```python
-NUM_EPOCHS = 10
-```
-
-**Try longer sequences:**
-```python
-MAX_INPUT_LENGTH = 768   # (default is 512)
-MAX_TARGET_LENGTH = 384  # (default is 256)
-```
-
-**Track what works:**
-
-Create a simple CSV to log experiments:
-
-```
-dataset_size | learning_rate | epochs | train_loss | notes
-100          | 5e-5          | 3      | 3.83       | gibberish output
-200          | 5e-5          | 5      | 3.2        | better format
-200          | 1e-5          | 5      | 3.5        | slower convergence
-500          | 5e-5          | 10     | 2.8        | best so far
-```
-
----
-
-### Phase 4: Multi-Type Gadget Classification (Optional)
-
-Right now your model sees only one gadget type (or a mix of types with the instruction clarifying which).
-
-**Advanced exercise:** Create a dataset with mixed gadget types and see if the model can classify them correctly based on the `instruction` field alone.
-
-**Example:**
-- Mix `ARITHMETIC/COMPUTATION`, `CONTROL-FLOW`, `I/O`, etc. into one dataset
-- Train the model to recognize the pattern from the instruction
-- Evaluate how well it generalizes across gadget types
-
----
-
-## Troubleshooting
-
-### Issue: `ModuleNotFoundError: No module named 'transformers'`
-
-**Solution:** Make sure your virtual environment is activated:
-
-```bash
-source venv/bin/activate  # macOS/Linux
-# or
-venv\Scripts\activate  # Windows
-```
-
-Then reinstall:
-```bash
-pip install transformers[torch]
-```
-
----
-
-### Issue: `FileNotFoundError: data/weird_machine_gadgets.jsonl`
-
-**Solution:** Check that your JSONL file is in the correct location:
+Ensure your `weird_machine_gadgets.jsonl` file is in the `data/` directory:
 
 ```bash
 ls data/
 # Should show: weird_machine_gadgets.jsonl
 ```
 
-If not:
+---
+
+## Running the Script
+
+Save the provided `main.py` script in your project root, then run:
+
 ```bash
-cp /path/to/weird_machine_gadgets.jsonl data/
+# For macOS/Linux:
+python main.py --platform unix
+
+# For Windows:
+python main.py --platform windows
+```
+
+### Skip Training (Load Existing Models)
+
+If you've already trained the models and just want to re-run the comparison:
+
+```bash
+python main.py --platform unix --skip-training
 ```
 
 ---
 
-### Issue: Script runs very slowly
+## Step-by-Step Walkthrough
 
-**This is normal on CPU.** A few things to speed it up:
+### MEMORY OPTIMIZATION LAYER
 
-1. **Reduce dataset size** (temporarily):
-   ```python
-   TOTAL_EXAMPLES_TO_USE = 50  # Test with just 50
-   ```
+```
+================================================================================
+MEMORY OPTIMIZATION LAYER
+================================================================================
+Forcing CPU-only training to prevent out-of-memory errors...
+✓ CUDA disabled
+✓ MPS disabled (Apple Silicon GPU)
+✓ All training will use CPU only
+================================================================================
+```
 
-2. **Reduce sequence length**:
-   ```python
-   MAX_INPUT_LENGTH = 256   # Down from 512
-   ```
+**What's happening:**
 
-3. **Close other applications** to free up CPU cores.
+The script **forces CPU-only training** to prevent memory errors on Apple Silicon Macs. This is done by:
+- Disabling CUDA (NVIDIA GPUs)
+- Disabling MPS (Metal Performance Shaders - Apple GPU)
+- Overriding PyTorch backend checks
 
-4. **First run is slowest** (model downloading + compilation). Subsequent runs are faster.
-
----
-
-### Issue: Model output is gibberish or repetitive
-
-**This usually means:** Not enough training examples or learning rate too high.
-
-**Solutions:**
-1. Increase `TOTAL_EXAMPLES_TO_USE` to 500+
-2. Reduce `LEARNING_RATE` to `1e-5`
-3. Increase `NUM_EPOCHS` to 5–10
+**Why?**
+- Apple Silicon unified memory is shared between CPU and GPU
+- MPS backend can run out of memory with larger models (GPT-2 124M hit the limit)
+- CPU-only is slower but **reliable** and fits in memory
 
 ---
 
-### Issue: Loss not decreasing
+### STEP 1: Platform Setup
 
-**Possible causes:**
+```
+================================================================================
+PLATFORM SETUP
+================================================================================
+✓ Platform: Unix (macOS/Linux)
+  - Multiprocessing: Enabled
+✓ CPU cores available: 8
+✓ Data loading processes: 2
+✓ PyTorch version: 2.2.2
+✓ Device: CPU (forced)
+```
 
-| Loss behavior | Likely cause | Fix |
-|---------------|--------------|-----|
-| Stays constant | Learning rate too low | Try `LEARNING_RATE = 1e-4` |
-| Explodes (gets huge) | Learning rate too high, or bad data | Try `LEARNING_RATE = 1e-5`, check data |
-| Decreases very slowly | Dataset too small | Increase `TOTAL_EXAMPLES_TO_USE` |
+**What's happening:**
+
+Platform detection configures multiprocessing:
+- **Unix (macOS/Linux)**: Enables multiprocessing (2 processes for data loading)
+- **Windows**: Disables multiprocessing (avoids spawn issues)
+
+**In the script:** `setup_platform()` function
 
 ---
 
-## Understanding the Code Structure
+### STEP 2: Loading and Preparing Data
 
-### Key configuration variables (top of script):
+```
+================================================================================
+LOADING AND PREPARING DATA
+================================================================================
+✓ Found data/weird_machine_gadgets.jsonl
+✓ Total lines: 492
+✓ Loaded 492 examples
+✓ Subsampled to 100 examples
+✓ Train: 90 | Validation: 10
+```
+
+**What's happening:**
+
+1. **Load JSONL**: Reads all examples from dataset
+2. **Add prompts**: Creates two prompt formats:
+   - **Seq2seq prompt** (for FLAN-T5): `"Task: {instruction}\n\nExcerpt:\n{input}\n\nAnswer:"`
+   - **Causal prompt** (for GPT-2): Includes the full output for next-token prediction
+3. **Subsample**: Uses 100 examples (configurable via `TOTAL_EXAMPLES_TO_USE`)
+4. **Split**: 90% train, 10% validation
+
+**In the script:** `load_and_prepare_data()` function
+
+**To adjust dataset size:**
 
 ```python
-# What to train on
-DATA_FILE = "data/weird_machine_gadgets.jsonl"
+# Top of main.py (line ~51):
+TOTAL_EXAMPLES_TO_USE = 100  # Change to 200, 500, etc.
+```
+
+---
+
+### STEP 3: Training Model 1 - FLAN-T5-small
+
+```
+================================================================================
+TRAINING MODEL: FLAN-T5-SMALL
+================================================================================
+  Model: google/flan-t5-small
+  Type: seq2seq
+  Params: 77M
+  Architecture: Bidirectional encoder + autoregressive decoder
+✓ Model loaded: T5ForConditionalGeneration
+  Parameters: 76,961,152
+  Tokenizing datasets...
+  Training...
+{'loss': 4.4353, 'epoch': 0.44}
+...
+{'train_loss': 3.9531, 'epoch': 3.0}
+✓ Training complete! Loss: 3.9531
+✓ Saved to: checkpoints/flan-t5-small/final_model
+```
+
+**What's happening:**
+
+1. **Load model**: Downloads `google/flan-t5-small` (77M params, ~250MB)
+2. **Tokenize**: Converts prompts and outputs to token IDs
+   - Input: up to 512 tokens
+   - Output: up to 256 tokens
+3. **Train**: 3 epochs with batch size 1 + gradient accumulation (4 steps)
+4. **Save**: Final model saved to `checkpoints/flan-t5-small/final_model`
+
+**Architecture:**
+- **Encoder-decoder** (seq2seq)
+- **Bidirectional encoder**: Can attend to full input context
+- **Autoregressive decoder**: Generates output left-to-right
+- **Instruction-tuned**: Pre-trained on instruction-following tasks
+
+**Training time:** ~3-5 minutes on 8-core CPU
+
+**In the script:** `train_seq2seq_model()` function
+
+---
+
+### STEP 4: Memory Cleanup
+
+```
+  Cleaning up memory after flan-t5-small...
+  ✓ Memory freed
+```
+
+**What's happening:**
+
+Between model training runs, the script explicitly:
+- Deletes model from memory (`del model`)
+- Runs garbage collection (`gc.collect()`)
+- Empties CUDA cache if available
+
+This prevents memory accumulation when training multiple models sequentially.
+
+---
+
+### STEP 5: Training Model 2 - DistilGPT2
+
+```
+================================================================================
+TRAINING MODEL: DISTILGPT2
+================================================================================
+  Model: distilgpt2
+  Type: causal (causal LM)
+  Params: 82M
+  Architecture: Decoder-only, left-to-right attention
+✓ Model loaded: GPT2LMHeadModel
+  Parameters: 81,912,576
+  Tokenizing datasets...
+  Training...
+{'loss': 4.4725, 'epoch': 0.44}
+...
+{'train_loss': 3.3547, 'epoch': 3.0}
+✓ Training complete! Loss: 3.3547
+✓ Saved to: checkpoints/distilgpt2/final_model
+```
+
+**What's happening:**
+
+1. **Load model**: Downloads `distilgpt2` (82M params, ~350MB)
+2. **Set pad token**: GPT-2 doesn't have a pad token by default, so we set it to EOS token
+3. **Tokenize**: Converts full prompt+output into token IDs (up to 768 tokens)
+4. **Train**: 3 epochs with causal language modeling objective
+5. **Save**: Final model saved to `checkpoints/distilgpt2/final_model`
+
+**Architecture:**
+- **Decoder-only** (causal LM)
+- **Left-to-right attention**: Can only attend to previous tokens
+- **Distilled from GPT-2**: Smaller, faster, 82M params (vs 124M for full GPT-2)
+- **General pre-training**: Not instruction-tuned
+
+**Training time:** ~3-5 minutes on 8-core CPU
+
+**In the script:** `train_causal_model()` function
+
+---
+
+### STEP 6: Ensemble Comparison & Agreement Analysis
+
+```
+================================================================================
+ENSEMBLE COMPARISON & AGREEMENT ANALYSIS
+================================================================================
+
+================================================================================
+VALIDATION EXAMPLE 1/10
+================================================================================
+
+INSTRUCTION: Identify weird machine CONTROL-FLOW gadgets in the excerpt...
+EXCERPT: Command enable logic uses a general enable contact...
+
+  [flan-t5-small] Generating...
+  Output: gadget_type: Command enable logic; location: Command enable logic...
+
+  [distilgpt2] Generating...
+  Output: gadget_type: Control-Flow gadget; location: Command enable contact...
+
+────────────────────────────────────────────────────────────────────────────────
+AGREEMENT ANALYSIS:
+────────────────────────────────────────────────────────────────────────────────
+  Full agreement: ✗ NO
+  Unique gadget types: ['Command enable logic', 'Control-Flow gadget']
+  Majority type: Command enable logic (1/2)
+
+  Model-specific gadget types:
+    - flan-t5-small: Command enable logic
+    - distilgpt2: Control-Flow gadget
+
+  Format checks:
+    ✓ flan-t5-small: {'gadget_type': True, 'location': True, 'explanation': True}
+    ✓ distilgpt2: {'gadget_type': True, 'location': True, 'explanation': True}
+```
+
+**What's happening:**
+
+For each validation example, the script:
+
+1. **Generate predictions**: Both models generate outputs for the same prompt
+2. **Extract gadget types**: Parse `gadget_type:` from each prediction
+3. **Check format**: Verify outputs contain required fields (gadget_type, location, explanation)
+4. **Compute agreement**:
+   - **Full agreement**: All models predict the same gadget type → High confidence
+   - **Disagreement**: Models predict different types → Ambiguous case
+
+**Agreement metrics:**
+- `full_agreement`: Boolean - do all models agree?
+- `unique_types`: List of distinct gadget types predicted
+- `majority_type`: Most common prediction (with 2 models, this is a tie-breaker)
+- `gadget_types`: Dict mapping model → predicted type
+
+**In the script:** `run_ensemble_comparison()` function
+
+---
+
+### STEP 7: Saving Comparison Report
+
+```
+================================================================================
+SAVING COMPARISON REPORT
+================================================================================
+✓ Report saved to: ensemble_report.json
+
+SUMMARY:
+  Total examples: 10
+  Full agreement: 6 (60.0%)
+  Disagreements: 4 (40.0%)
+
+  Format accuracy by model:
+    - flan-t5-small: 90.0%
+    - distilgpt2: 80.0%
+```
+
+**What's happening:**
+
+The script saves a detailed JSON report with:
+
+```json
+{
+  "summary": {
+    "total_examples": 10,
+    "full_agreements": 6,
+    "full_agreement_rate": 0.6,
+    "disagreement_rate": 0.4,
+    "model_format_accuracy": {
+      "flan-t5-small": 0.9,
+      "distilgpt2": 0.8
+    }
+  },
+  "results": [
+    {
+      "example_id": 0,
+      "instruction": "...",
+      "excerpt": "...",
+      "gold_output": "...",
+      "predictions": {
+        "flan-t5-small": "...",
+        "distilgpt2": "..."
+      },
+      "format_checks": {...},
+      "agreement": {...}
+    },
+    ...
+  ]
+}
+```
+
+**In the script:** `save_comparison_report()` function
+
+---
+
+## Understanding the Report: `ensemble_report.json`
+
+### Summary Metrics
+
+```json
+{
+  "summary": {
+    "total_examples": 10,
+    "full_agreements": 6,
+    "full_agreement_rate": 0.6,
+    "disagreement_rate": 0.4,
+    "model_format_accuracy": {
+      "flan-t5-small": 0.9,
+      "distilgpt2": 0.8
+    }
+  }
+}
+```
+
+**Interpretation:**
+
+| Metric | Meaning | What to look for |
+|--------|---------|-----------------|
+| `full_agreement_rate` | % of examples where both models agree | Higher = models converge on same interpretation |
+| `disagreement_rate` | % of examples with different predictions | Lower = more consistent ensemble |
+| `model_format_accuracy` | % of outputs with correct format | Should be >80% for production use |
+
+**With 100 examples trained:**
+- Agreement rate 50-70% is normal
+- Format accuracy 70-90% is expected
+- Disagreements highlight ambiguous cases
+
+### Per-Example Results
+
+Each result contains:
+- `example_id`: Index in validation set
+- `instruction`: Task description
+- `excerpt`: Manual excerpt
+- `gold_output`: Correct answer
+- `predictions`: Dict of model → prediction
+- `agreement`: Agreement analysis
+
+**Use cases:**
+1. **Find hard examples**: `agreement.full_agreement == false`
+2. **Analyze model biases**: Which model is more accurate?
+3. **Confidence scoring**: Full agreement → high confidence
+
+---
+
+## Configuration & Tuning
+
+### Key Configuration Variables
+
+**At the top of `main.py` (lines 44-58):**
+
+```python
+# Dataset sizing
 TOTAL_EXAMPLES_TO_USE = 100  # ← CHANGE THIS FOR MORE DATA
+EVAL_SPLIT = 0.1             # 10% validation
 
-# Model choice
-MODEL_NAME = "google/flan-t5-small"  # ← Can change to flan-t5-base for better quality
-
-# Training hyperparameters
+# Training hyperparameters (shared across models)
 TRAIN_BATCH_SIZE = 1
+EVAL_BATCH_SIZE = 1
 GRADIENT_ACCUMULATION_STEPS = 4
-LEARNING_RATE = 5e-5  # ← TRY 1e-4 or 1e-5
-NUM_EPOCHS = 3  # ← TRY 5, 10, 20
+LEARNING_RATE = 5e-5
+NUM_EPOCHS = 3
 MAX_INPUT_LENGTH = 512
 MAX_TARGET_LENGTH = 256
 ```
 
-### Main functions:
+### Scaling Up
 
-| Function | Purpose | Located at |
-|----------|---------|-----------|
-| `make_prompt()` | Combines instruction + input into a prompt | Line 143 |
-| `preprocess()` | Tokenizes prompts and outputs | Line 222 |
-| `generate_answer()` | Uses trained model to generate predictions | Line 354 |
-
----
-
-## Next: Advanced Experiments
-
-### Experiment 1: Compare Model Sizes
-
-Try `google/flan-t5-base` (250M params) instead of `flan-t5-small` (77M):
+#### Phase 1: Increase Dataset Size
 
 ```python
-MODEL_NAME = "google/flan-t5-base"  # Larger, slower, better quality
+TOTAL_EXAMPLES_TO_USE = 200  # or 300, 500
 ```
 
-**Trade-off:** Slower training but potentially better outputs.
+**Expected improvements:**
+- Higher agreement rate (70-80%)
+- Better format accuracy (85-95%)
+- More stable predictions
+
+**Training time:**
+- 200 examples: ~10 min per model (20 min total)
+- 500 examples: ~25 min per model (50 min total)
+
+#### Phase 2: Increase Epochs
+
+```python
+NUM_EPOCHS = 5  # or 10
+```
+
+**Trade-off:**
+- Better model quality (lower loss)
+- Longer training time (2-3x)
+
+#### Phase 3: Adjust Learning Rate
+
+```python
+LEARNING_RATE = 1e-5  # Lower for stability
+# or
+LEARNING_RATE = 1e-4  # Higher for faster convergence
+```
+
+**Rule of thumb:**
+- If loss plateaus early → increase learning rate
+- If loss is unstable → decrease learning rate
 
 ---
 
-### Experiment 2: Evaluate on Your Own Excerpts
+## Research Questions for Students
 
-Create a separate script that loads the model and tests it on new excerpts:
+### 1. Agreement Pattern Analysis
+
+**Question:** Which examples cause disagreement between models?
+
+**How to explore:**
+```python
+import json
+
+with open('ensemble_report.json', 'r') as f:
+    report = json.load(f)
+
+# Find disagreements
+disagreements = [
+    r for r in report['results']
+    if not r['agreement']['full_agreement']
+]
+
+print(f"Found {len(disagreements)} disagreements")
+for d in disagreements:
+    print(f"\nExample {d['example_id']}:")
+    print(f"  Instruction: {d['instruction'][:80]}...")
+    print(f"  FLAN-T5: {d['agreement']['gadget_types']['flan-t5-small']}")
+    print(f"  DistilGPT2: {d['agreement']['gadget_types']['distilgpt2']}")
+    print(f"  Gold: {d['gold_output'][:80]}...")
+```
+
+**Hypotheses to test:**
+- Do disagreements correlate with excerpt length?
+- Are certain gadget types more ambiguous?
+- Does technical jargon cause confusion?
+
+---
+
+### 2. Architectural Comparison
+
+**Question:** Does seq2seq (FLAN-T5) outperform causal LM (DistilGPT2)?
+
+**Metrics to compare:**
+- Format accuracy (from report summary)
+- Agreement with gold standard
+- Training loss (final values)
+
+**Hypothesis:**
+- Instruction-tuned models (FLAN-T5) should have better format adherence
+- Seq2seq models should handle longer contexts better
+
+---
+
+### 3. Confidence via Agreement
+
+**Question:** Can we use inter-model agreement as a confidence score?
+
+**Approach:**
+1. Label validation examples:
+   - High confidence = full agreement
+   - Low confidence = disagreement
+2. Manually inspect a sample of each category
+3. Measure: Are "high confidence" predictions more accurate?
+
+**Implementation:**
+```python
+# Separate by confidence
+high_conf = [r for r in report['results'] if r['agreement']['full_agreement']]
+low_conf = [r for r in report['results'] if not r['agreement']['full_agreement']]
+
+print(f"High confidence: {len(high_conf)} examples")
+print(f"Low confidence: {len(low_conf)} examples")
+
+# Manual inspection: are high-conf predictions more accurate?
+```
+
+---
+
+### 4. Error Analysis by Gadget Type
+
+**Question:** Which gadget types are hardest to classify?
+
+**Approach:**
+```python
+from collections import defaultdict
+
+errors_by_type = defaultdict(list)
+
+for r in report['results']:
+    # Extract gold gadget type
+    gold_type = r['gold_output'].split('gadget_type:')[1].split(';')[0].strip()
+    
+    # Check if models agreed and were correct
+    if not r['agreement']['full_agreement']:
+        errors_by_type[gold_type].append(r['example_id'])
+
+for gtype, examples in errors_by_type.items():
+    print(f"{gtype}: {len(examples)} disagreements")
+```
+
+---
+
+### 5. Majority Voting Performance
+
+**Question:** Does ensemble voting improve accuracy?
+
+**Approach:**
+1. For each example, take the majority vote (with 2 models, this is tie-breaking)
+2. Compare majority vote vs individual model accuracy
+3. Measure improvement
+
+**With 3+ models:** Majority voting becomes more powerful
+
+---
+
+## Troubleshooting
+
+### Issue: `RuntimeError: MPS backend out of memory`
+
+**Solution:** The script should already force CPU-only. Verify by checking the output:
+
+```
+✓ MPS disabled (Apple Silicon GPU)
+✓ All training will use CPU only
+```
+
+If you still see this error, ensure the memory optimization layer is at the very top of `main.py` (lines 22-38).
+
+---
+
+### Issue: `TypeError: transformers.generation.utils.GenerationMixin.generate() argument after ** must be a mapping`
+
+**Solution:** Fixed in the provided script. The issue was unpacking `inputs["input_ids"]` instead of `inputs`. Now uses:
 
 ```python
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+outputs = model.generate(
+    inputs["input_ids"],  # Direct tensor
+    attention_mask=inputs.get("attention_mask"),
+    ...
+)
+```
+
+---
+
+### Issue: Training too slow on CPU
+
+**This is normal.** To speed up:
+
+1. **Reduce dataset size temporarily:**
+   ```python
+   TOTAL_EXAMPLES_TO_USE = 50
+   ```
+
+2. **Reduce sequence lengths:**
+   ```python
+   MAX_INPUT_LENGTH = 256
+   MAX_TARGET_LENGTH = 128
+   ```
+
+3. **Use fewer epochs:**
+   ```python
+   NUM_EPOCHS = 2
+   ```
+
+4. **Close other applications** to free CPU cores
+
+---
+
+### Issue: Model outputs are gibberish
+
+**Causes:**
+- Not enough training data (100 examples is minimal)
+- Learning rate too high
+
+**Solutions:**
+1. Increase `TOTAL_EXAMPLES_TO_USE` to 200+
+2. Lower `LEARNING_RATE` to `1e-5`
+3. Increase `NUM_EPOCHS` to 5
+
+---
+
+### Issue: Low agreement rate (<40%)
+
+**This is expected with 100 examples.**
+
+**To improve:**
+1. Scale to 500-1000 examples
+2. Increase epochs to 5-10
+3. Use a larger model (flan-t5-base instead of flan-t5-small)
+
+---
+
+## Advanced Experiments
+
+### Experiment 1: Add a Third Model
+
+Edit the `MODELS` dict (line ~52):
+
+```python
+MODELS = {
+    "flan-t5-small": {...},
+    "distilgpt2": {...},
+    "flan-t5-base": {  # Add this
+        "name": "google/flan-t5-base",
+        "type": "seq2seq",
+        "params": "250M",
+        "description": "Larger seq2seq, better quality",
+        "architecture": "Bidirectional encoder + autoregressive decoder",
+    },
+}
+```
+
+**Trade-off:** Slower training (250M params) but potentially better quality and more interesting 3-way comparisons.
+
+---
+
+### Experiment 2: Custom Inference Script
+
+Load trained models for your own excerpts:
+
+```python
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM
 import torch
 
-tokenizer = AutoTokenizer.from_pretrained('checkpoints/flan-t5-small-gadgets/final_model')
-model = AutoModelForSeq2SeqLM.from_pretrained('checkpoints/flan-t5-small-gadgets/final_model')
+# Load FLAN-T5
+t5_tokenizer = AutoTokenizer.from_pretrained('checkpoints/flan-t5-small/final_model')
+t5_model = AutoModelForSeq2SeqLM.from_pretrained('checkpoints/flan-t5-small/final_model')
 
-# Move to CPU
-model.to("cpu")
+# Load DistilGPT2
+gpt_tokenizer = AutoTokenizer.from_pretrained('checkpoints/distilgpt2/final_model')
+gpt_model = AutoModelForCausalLM.from_pretrained('checkpoints/distilgpt2/final_model')
 
-# Your own example
+# Your custom excerpt
 instruction = "Identify weird machine ARITHMETIC/COMPUTATION gadgets..."
-excerpt = "The ADD instruction in Logix 5000 adds two values..."
-
+excerpt = "The ADD instruction adds two integer values..."
 prompt = f"Task: {instruction}\n\nExcerpt:\n{excerpt}\n\nAnswer:"
-inputs = tokenizer(prompt, return_tensors="pt").to("cpu")
 
-with torch.no_grad():
-    outputs = model.generate(**inputs, max_new_tokens=256)
+# FLAN-T5 prediction
+t5_inputs = t5_tokenizer(prompt, return_tensors="pt")
+t5_outputs = t5_model.generate(**t5_inputs, max_new_tokens=256)
+t5_pred = t5_tokenizer.decode(t5_outputs[0], skip_special_tokens=True)
 
-print(tokenizer.decode(outputs[0], skip_special_tokens=True))
+# DistilGPT2 prediction
+gpt_inputs = gpt_tokenizer(prompt, return_tensors="pt")
+gpt_outputs = gpt_model.generate(gpt_inputs["input_ids"], max_new_tokens=256)
+gpt_pred = gpt_tokenizer.decode(gpt_outputs[0], skip_special_tokens=True)
+
+print(f"FLAN-T5: {t5_pred}")
+print(f"DistilGPT2: {gpt_pred.split('Answer:')[-1].strip()}")
 ```
 
 ---
 
-### Experiment 3: Measure Actual Accuracy
+### Experiment 3: Measure ROUGE Scores
 
-Use evaluation metrics to quantify model quality:
+Quantify prediction quality:
+
+```bash
+pip install rouge-score
+```
 
 ```python
 from rouge_score import rouge_scorer
+import json
 
 scorer = rouge_scorer.RougeScorer(['rouge1', 'rougeL'], use_stemmer=True)
 
-gold = "gadget_type: Arithmetic; location: ADD blocks; explanation: ..."
-pred = "gadget_type: Arithmetic; location: ADD; explanation: ..."
+with open('ensemble_report.json', 'r') as f:
+    report = json.load(f)
 
-scores = scorer.score(gold, pred)
-print(f"ROUGE-1: {scores['rouge1'].fmeasure:.3f}")
-print(f"ROUGE-L: {scores['rougeL'].fmeasure:.3f}")
+for model_key in ['flan-t5-small', 'distilgpt2']:
+    scores = []
+    for r in report['results']:
+        gold = r['gold_output']
+        pred = r['predictions'][model_key]
+        score = scorer.score(gold, pred)
+        scores.append(score['rougeL'].fmeasure)
+    
+    avg_score = sum(scores) / len(scores)
+    print(f"{model_key} ROUGE-L: {avg_score:.3f}")
 ```
-
-(Install: `pip install rouge-score`)
 
 ---
 
 ## Key Takeaways
 
-1. **Data is king**: More training examples → better model (up to a point)
-2. **Hyperparameters matter**: Learning rate, epochs, batch size all affect quality
-3. **Validation is crucial**: Always check predictions on unseen data
-4. **CPU is viable**: Even without a GPU, you can train useful models in minutes
-5. **Iteration is the process**: Fine-tuning is rarely "set and forget"—experiment, measure, adjust
+1. **Ensemble diversity matters**: Different architectures (seq2seq vs causal) provide different perspectives
+2. **Agreement = confidence**: Full agreement suggests high-confidence predictions
+3. **Disagreement = ambiguity**: Highlights hard examples worth manual inspection
+4. **Memory-optimized training**: CPU-only is viable for small models (77-82M params)
+5. **Iterative scaling**: Start at 100 examples, verify pipeline, scale to 500-1000
+6. **Format adherence**: Instruction-tuned models (FLAN-T5) often have better structured outputs
 
 ---
 
 ## Resources
 
-- **Hugging Face documentation**: https://huggingface.co/docs/transformers/
+- **Hugging Face Transformers**: https://huggingface.co/docs/transformers/
 - **FLAN-T5 model card**: https://huggingface.co/google/flan-t5-small
+- **DistilGPT2 model card**: https://huggingface.co/distilgpt2
 - **Datasets library**: https://huggingface.co/docs/datasets/
 - **PyTorch tutorials**: https://pytorch.org/tutorials/
 
 ---
 
-## When the script finishes:
+## Summary Checklist
 
-- [ ] Review the 3 validation examples and their format checks
-- [ ] Note the final training loss
-- [ ] Plan your next experiment (scale to 200 examples? try different learning rate?)
+**Before you start:**
+- [ ] Dependencies installed (`torch`, `transformers`, `datasets`, etc.)
+- [ ] `data/weird_machine_gadgets.jsonl` exists
+- [ ] `main.py` saved in project root
+- [ ] ~5 GB free disk space
+- [ ] 8+ GB RAM (for CPU training)
 
+**After training:**
+- [ ] Both models trained successfully (check `checkpoints/` directories)
+- [ ] `ensemble_report.json` generated
+- [ ] Review agreement rate and format accuracy
+- [ ] Inspect 2-3 disagreement examples manually
+- [ ] Plan next experiment (scale to 200? add 3rd model? tune hyperparameters?)
+
+---
+
+**Happy ensemble training!** 🚀
+
+For questions or issues, refer to the troubleshooting section or check the Hugging Face documentation.
