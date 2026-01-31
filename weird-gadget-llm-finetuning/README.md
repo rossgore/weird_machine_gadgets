@@ -331,16 +331,19 @@ For each validation example, the script:
 
 1. **Generate predictions**: Both models generate outputs for the same prompt
 2. **Extract gadget types**: Parse `gadget_type:` from each prediction
-3. **Check format**: Verify outputs contain required fields (gadget_type, location, explanation)
-4. **Compute agreement**:
-   - **Full agreement**: All models predict the same gadget type → High confidence
-   - **Disagreement**: Models predict different types → Ambiguous case
+3. **Normalize gadget types**: Convert to lowercase, remove spaces/hyphens/punctuation for comparison
+4. **Check format**: Verify outputs contain required fields (gadget_type, location, explanation)
+5. **Compute agreement**:
+   - **Full agreement**: Normalized gadget types match → High confidence
+   - **Disagreement**: Normalized types differ → Ambiguous or semantically different
 
 **Agreement metrics:**
-- `full_agreement`: Boolean - do all models agree?
-- `unique_types`: List of distinct gadget types predicted
+- `full_agreement`: Boolean - do normalized models agree?
+- `unique_types`: List of distinct **original** gadget types (before normalization)
+- `normalized_types`: Dict mapping model → normalized type (for debugging)
+- `unique_normalized_types`: List of distinct normalized types
 - `majority_type`: Most common prediction (with 2 models, this is a tie-breaker)
-- `gadget_types`: Dict mapping model → predicted type
+- `gadget_types`: Dict mapping model → predicted type (original)
 
 **In the script:** `run_ensemble_comparison()` function
 
@@ -356,12 +359,12 @@ SAVING COMPARISON REPORT
 
 SUMMARY:
   Total examples: 10
-  Full agreement: 6 (60.0%)
-  Disagreements: 4 (40.0%)
+  Full agreement: 1 (10.0%)
+  Disagreements: 9 (90.0%)
 
   Format accuracy by model:
-    - flan-t5-small: 90.0%
-    - distilgpt2: 80.0%
+    - flan-t5-small: 20.0%
+    - distilgpt2: 30.0%
 ```
 
 **What's happening:**
@@ -372,12 +375,12 @@ The script saves a detailed JSON report with:
 {
   "summary": {
     "total_examples": 10,
-    "full_agreements": 6,
-    "full_agreement_rate": 0.6,
-    "disagreement_rate": 0.4,
+    "full_agreements": 1,
+    "full_agreement_rate": 0.1,
+    "disagreement_rate": 0.9,
     "model_format_accuracy": {
-      "flan-t5-small": 0.9,
-      "distilgpt2": 0.8
+      "flan-t5-small": 0.2,
+      "distilgpt2": 0.3
     }
   },
   "results": [
@@ -391,7 +394,13 @@ The script saves a detailed JSON report with:
         "distilgpt2": "..."
       },
       "format_checks": {...},
-      "agreement": {...}
+      "agreement": {
+        "full_agreement": false,
+        "unique_types": ["Command enable logic", "Control-Flow gadget"],
+        "gadget_types": {"flan-t5-small": "Command enable logic", "distilgpt2": "Control-Flow gadget"},
+        "normalized_types": {"flan-t5-small": "commenablelogic", "distilgpt2": "controlflow"},
+        "unique_normalized_types": ["commenablelogic", "controlflow"]
+      }
     },
     ...
   ]
@@ -410,12 +419,12 @@ The script saves a detailed JSON report with:
 {
   "summary": {
     "total_examples": 10,
-    "full_agreements": 6,
-    "full_agreement_rate": 0.6,
-    "disagreement_rate": 0.4,
+    "full_agreements": 1,
+    "full_agreement_rate": 0.1,
+    "disagreement_rate": 0.9,
     "model_format_accuracy": {
-      "flan-t5-small": 0.9,
-      "distilgpt2": 0.8
+      "flan-t5-small": 0.2,
+      "distilgpt2": 0.3
     }
   }
 }
@@ -425,14 +434,14 @@ The script saves a detailed JSON report with:
 
 | Metric | Meaning | What to look for |
 |--------|---------|-----------------|
-| `full_agreement_rate` | % of examples where both models agree | Higher = models converge on same interpretation |
-| `disagreement_rate` | % of examples with different predictions | Lower = more consistent ensemble |
+| `full_agreement_rate` | % of examples where normalized gadget types match | Higher = models converge on same interpretation |
+| `disagreement_rate` | % of examples with different normalized predictions | Lower = more consistent ensemble |
 | `model_format_accuracy` | % of outputs with correct format | Should be >80% for production use |
 
 **With 100 examples trained:**
-- Agreement rate 50-70% is normal
-- Format accuracy 70-90% is expected
-- Disagreements highlight ambiguous cases
+- Agreement rate 10-30% is typical (after normalization helps with spelling/caps)
+- Format accuracy 20-40% is expected with minimal training
+- High disagreements highlight genuinely ambiguous or semantically different interpretations
 
 ### Per-Example Results
 
@@ -442,12 +451,194 @@ Each result contains:
 - `excerpt`: Manual excerpt
 - `gold_output`: Correct answer
 - `predictions`: Dict of model → prediction
-- `agreement`: Agreement analysis
+- `agreement`: Agreement analysis with **both original and normalized types**
 
 **Use cases:**
 1. **Find hard examples**: `agreement.full_agreement == false`
 2. **Analyze model biases**: Which model is more accurate?
 3. **Confidence scoring**: Full agreement → high confidence
+4. **Debug normalization**: Compare `gadget_types` vs `normalized_types`
+
+---
+
+## Limitations of Simple String Normalization
+
+### The Semantic Gap Problem
+
+The current script uses **string normalization** (lowercase, remove punctuation, etc.) to handle minor variations like:
+
+✅ **Works well for:**
+- Capitalization: `"ReadWrite"` vs `"READWRITE"` → both normalize to `"readwrite"` ✓
+- Hyphens: `"Control-Flow"` vs `"ControlFlow"` → both normalize to `"controlflow"` ✓  
+- Spacing: `"IO and Side-Effect"` vs `"IO and SIDE-EFFECT"` → both normalize to `"iosideeffect"` ✓
+- Typos: `"TimingSynchronization"` vs `"TimingSYNCHRONIZATION"` → both normalize to `"timingsynchronization"` ✓
+
+❌ **Does NOT work for semantic differences:**
+
+| Example | FLAN-T5 Output | DistilGPT2 Output | Issue |
+|---------|----------------|-------------------|-------|
+| Example 0 | `"Command enable logic"` | `"Control-Flow gadget"` | **Specific vs generic** - both refer to control flow, but one is about the specific command enable mechanism, the other is the category name |
+| Example 2 | `"READWRITE gadget"` | `"BOOL tag"` | **Category vs implementation** - BOOL tag is a specific type of read/write mechanism |
+| Example 5 | `"Control example Control block is a kind of function block that is TRUE when a mode bit is TRUE..."` | `"Control-Flow gadgets"` | **Garbled vs clean** - one model generated garbled repetitive text, the other gave a clean label |
+| Example 6 | `"weird machine"` | `"COMPOS"` (truncated) | **Generic vs truncated** - one is too generic, the other appears cut off |
+
+### Why This Matters
+
+**String normalization cannot detect:**
+1. **Semantic equivalence**: "Command enable logic" and "Control-Flow gadget" both describe control flow, but string matching sees them as different
+2. **Abstraction levels**: "BOOL tag" is a specific instance of "ReadWrite gadget" (correct answer)
+3. **Garbled output**: When a model outputs repetitive or nonsensical text, normalization won't flag it
+4. **Partial correctness**: "IO, sIDE-EFFECT gadget" vs "IO and SIDE-EFFECT gadgets using Logix 5000 physical I" - one is concise, one is verbose but potentially more accurate
+
+### The Need for Reasoning LLMs
+
+To properly evaluate **semantic agreement** (not just string similarity), we need a reasoning LLM to:
+
+1. **Judge semantic equivalence**:
+   ```
+   Question: Are "Command enable logic" and "Control-Flow gadget" semantically equivalent?
+   
+   Reasoning LLM: Both refer to control flow mechanisms. "Command enable logic" is more 
+   specific, naming the exact feature (command enable), while "Control-Flow gadget" is 
+   the category label. They are semantically related but differ in specificity.
+   
+   Verdict: PARTIAL AGREEMENT (related but different abstraction levels)
+   ```
+
+2. **Detect abstraction mismatches**:
+   ```
+   Question: Is "BOOL tag" equivalent to "ReadWrite gadget"?
+   
+   Reasoning LLM: "BOOL tag" is a specific implementation (a tag of type BOOL), while 
+   "ReadWrite gadget" is the category it belongs to. This is like saying "Honda Civic" 
+   vs "car" - one is correct but too specific, the other is the right category.
+   
+   Verdict: PARTIAL AGREEMENT (correct category but wrong specificity)
+   ```
+
+3. **Filter garbled outputs**:
+   ```
+   Question: Is "Control example Control block is a kind of function block that is TRUE 
+   when a mode bit is TRUE. The function block is not executed in that cycle. The 
+   explanation Identify the trick of a function block that is TRUE when a mode block 
+   is TRUE." a valid gadget type?
+   
+   Reasoning LLM: This is garbled output. It's repetitive, contains multiple sentences, 
+   and doesn't provide a clean category label. The model likely diverged during generation.
+   
+   Verdict: INVALID OUTPUT
+   ```
+
+4. **Score partial correctness**:
+   - Full agreement: Exact semantic match (both say "ReadWrite gadget")
+   - Partial agreement: Related concepts (one says "Command enable logic", other says "Control-Flow gadget")
+   - Disagreement: Unrelated concepts (one says "ReadWrite", other says "Timing")
+   - Invalid: Garbled or nonsensical output
+
+### Future Enhancement: LLM-as-Judge Pipeline
+
+**Phase 1: Current (String Normalization)**
+```
+Model A → "ReadWrite gadget"  ───┐
+                                  ├─→ normalize() → compare strings → AGREEMENT ✓
+Model B → "READWRITE gadget"  ───┘
+```
+
+**Phase 2: Future (LLM-as-Judge)**
+```
+Model A → "Command enable logic"  ───┐
+                                      ├─→ Reasoning LLM (Claude, GPT-4, etc.)
+Model B → "Control-Flow gadget"   ───┘     ↓
+                                      semantic_similarity()
+                                            ↓
+                                      PARTIAL AGREEMENT (60% similar)
+                                      Reason: "Both refer to control flow, but differ 
+                                      in specificity..."
+```
+
+**Implementation sketch:**
+```python
+def llm_semantic_judge(prediction_a: str, prediction_b: str, gold: str) -> Dict:
+    """
+    Use a reasoning LLM (e.g., Claude 3.5 Sonnet, GPT-4) to judge semantic agreement.
+    """
+    prompt = f"""
+    You are evaluating whether two model predictions are semantically equivalent.
+    
+    Gold standard: {gold}
+    Model A: {prediction_a}
+    Model B: {prediction_b}
+    
+    Are Model A and Model B saying the same thing? Consider:
+    1. Semantic equivalence (different words, same meaning)
+    2. Abstraction level (specific vs generic)
+    3. Partial correctness (one is more accurate than the other)
+    4. Garbled output (repetitive, nonsensical)
+    
+    Respond with:
+    - FULL_AGREEMENT: Exact semantic match
+    - PARTIAL_AGREEMENT: Related concepts but different specificity
+    - DISAGREEMENT: Unrelated concepts
+    - INVALID: One or both outputs are garbled
+    
+    Also provide a 1-sentence explanation.
+    """
+    
+    # Call reasoning LLM API (Claude, GPT-4, etc.)
+    response = reasoning_llm_api(prompt)
+    
+    return {
+        "verdict": response.verdict,  # FULL_AGREEMENT, PARTIAL_AGREEMENT, etc.
+        "explanation": response.explanation,
+        "confidence": response.confidence,  # 0-1 score
+    }
+```
+
+### Workaround for Now: Manual Inspection
+
+Until we integrate a reasoning LLM, **manually inspect disagreements**:
+
+1. **Filter by disagreement**:
+   ```python
+   import json
+   
+   with open('ensemble_report.json', 'r') as f:
+       report = json.load(f)
+   
+   disagreements = [r for r in report['results'] if not r['agreement']['full_agreement']]
+   
+   for d in disagreements[:5]:  # Look at first 5
+       print(f"\nExample {d['example_id']}:")
+       print(f"  FLAN-T5: {d['agreement']['gadget_types']['flan-t5-small']}")
+       print(f"  DistilGPT2: {d['agreement']['gadget_types']['distilgpt2']}")
+       print(f"  Gold: {d['gold_output'][:60]}...")
+       print(f"  → Are these semantically equivalent? (y/n/partial)")
+   ```
+
+2. **Create a manual annotation**:
+   - Add a `"semantic_agreement"` field: `"full"`, `"partial"`, `"none"`, `"invalid"`
+   - Track which disagreements are actually semantic matches
+   - Measure: What % of "disagreements" are actually partial agreements?
+
+3. **Use this data to train a classifier** (future):
+   - Input: (prediction_a, prediction_b, gold_output)
+   - Output: semantic_similarity_score (0-1)
+   - Train on your manually annotated examples
+
+---
+
+### Summary: Normalization Helps, But Not Enough
+
+| Problem | String Normalization | Reasoning LLM Needed? |
+|---------|---------------------|---------------------|
+| Capitalization (`ReadWrite` vs `READWRITE`) | ✓ Solves | ❌ Not needed |
+| Typos (`Synchronization` vs `Syncronization`) | ✓ Solves (mostly) | ❌ Not needed |
+| Semantic equivalence (`Command enable` vs `Control-Flow`) | ❌ Cannot detect | ✅ **Needed** |
+| Abstraction mismatch (`BOOL tag` vs `ReadWrite gadget`) | ❌ Cannot detect | ✅ **Needed** |
+| Garbled output | ❌ Cannot detect | ✅ **Needed** |
+| Partial correctness | ❌ Cannot score | ✅ **Needed** |
+
+**Bottom line:** With 100 training examples, expect **low format accuracy** (20-40%) and **high disagreement** (70-90%) even after normalization. Many "disagreements" are actually partial agreements that only a reasoning LLM can detect.
 
 ---
 
@@ -481,8 +672,8 @@ TOTAL_EXAMPLES_TO_USE = 200  # or 300, 500
 ```
 
 **Expected improvements:**
-- Higher agreement rate (70-80%)
-- Better format accuracy (85-95%)
+- Higher agreement rate (30-50%)
+- Better format accuracy (50-70%)
 - More stable predictions
 
 **Training time:**
@@ -538,6 +729,8 @@ for d in disagreements:
     print(f"  Instruction: {d['instruction'][:80]}...")
     print(f"  FLAN-T5: {d['agreement']['gadget_types']['flan-t5-small']}")
     print(f"  DistilGPT2: {d['agreement']['gadget_types']['distilgpt2']}")
+    print(f"  Normalized FLAN-T5: {d['agreement']['normalized_types']['flan-t5-small']}")
+    print(f"  Normalized DistilGPT2: {d['agreement']['normalized_types']['distilgpt2']}")
     print(f"  Gold: {d['gold_output'][:80]}...")
 ```
 
@@ -545,6 +738,7 @@ for d in disagreements:
 - Do disagreements correlate with excerpt length?
 - Are certain gadget types more ambiguous?
 - Does technical jargon cause confusion?
+- Do normalized types reveal that some "disagreements" are actually spelling variations?
 
 ---
 
@@ -625,6 +819,23 @@ for gtype, examples in errors_by_type.items():
 
 ---
 
+### 6. Semantic Agreement Analysis (Manual)
+
+**Question:** How many "disagreements" are actually semantic agreements?
+
+**Approach:**
+1. Sample 20 disagreement cases
+2. Manually label each as:
+   - `"full_agreement"`: Semantically identical (e.g., "ReadWrite" vs "READWRITE")
+   - `"partial_agreement"`: Related but different specificity (e.g., "BOOL tag" vs "ReadWrite gadget")
+   - `"disagreement"`: Truly different concepts
+   - `"invalid"`: Garbled output
+3. Calculate: What % of "disagreements" are actually partial/full agreements?
+
+**This gives you a baseline for how much a reasoning LLM could improve agreement rate.**
+
+---
+
 ## Troubleshooting
 
 ### Issue: `RuntimeError: MPS backend out of memory`
@@ -691,14 +902,28 @@ outputs = model.generate(
 
 ---
 
-### Issue: Low agreement rate (<40%)
+### Issue: Low agreement rate (<20%)
 
-**This is expected with 100 examples.**
+**This is expected with 100 examples and string-only comparison.**
 
 **To improve:**
-1. Scale to 500-1000 examples
-2. Increase epochs to 5-10
-3. Use a larger model (flan-t5-base instead of flan-t5-small)
+1. Scale to 500-1000 examples (improves model quality)
+2. Increase epochs to 5-10 (improves convergence)
+3. Implement LLM-as-judge (detects semantic equivalence)
+4. Use a larger model (flan-t5-base instead of flan-t5-small)
+
+---
+
+### Issue: High disagreement rate but predictions look similar
+
+**This is the semantic gap problem!**
+
+Many "disagreements" are actually:
+- Spelling variations: `"TimingSynchronization"` vs `"TimingSYNCHRONIZATION"`
+- Capitalization: `"ReadWrite"` vs `"READWRITE"`
+- Semantic equivalence: `"Command enable logic"` vs `"Control-Flow gadget"`
+
+**Solution:** See the "Limitations of Simple String Normalization" section above. You'll need a reasoning LLM to properly evaluate these.
 
 ---
 
@@ -794,14 +1019,94 @@ for model_key in ['flan-t5-small', 'distilgpt2']:
 
 ---
 
+### Experiment 4: Implement LLM-as-Judge (Advanced)
+
+Use a reasoning LLM (Claude, GPT-4) to judge semantic agreement:
+
+```python
+import anthropic  # or openai
+
+def llm_judge_semantic_agreement(pred_a, pred_b, gold):
+    """Use Claude to judge if two predictions are semantically equivalent."""
+    client = anthropic.Anthropic(api_key="your-key")
+    
+    message = client.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=500,
+        messages=[{
+            "role": "user",
+            "content": f"""
+Are these two model predictions semantically equivalent?
+
+Gold: {gold}
+Model A: {pred_a}
+Model B: {pred_b}
+
+Respond with:
+- FULL_AGREEMENT: Exact semantic match
+- PARTIAL_AGREEMENT: Related but different specificity
+- DISAGREEMENT: Unrelated concepts
+- INVALID: Garbled output
+
+Also provide a 1-sentence explanation.
+"""
+        }]
+    )
+    
+    response_text = message.content[0].text
+    
+    # Parse verdict
+    if "FULL_AGREEMENT" in response_text:
+        verdict = "full"
+    elif "PARTIAL_AGREEMENT" in response_text:
+        verdict = "partial"
+    elif "INVALID" in response_text:
+        verdict = "invalid"
+    else:
+        verdict = "disagreement"
+    
+    return {
+        "verdict": verdict,
+        "explanation": response_text
+    }
+
+# Apply to all disagreements
+with open('ensemble_report.json', 'r') as f:
+    report = json.load(f)
+
+for result in report['results']:
+    if not result['agreement']['full_agreement']:
+        pred_a = result['predictions']['flan-t5-small']
+        pred_b = result['predictions']['distilgpt2']
+        gold = result['gold_output']
+        
+        llm_judgment = llm_judge_semantic_agreement(pred_a, pred_b, gold)
+        result['llm_judgment'] = llm_judgment
+        
+        print(f"Example {result['example_id']}: {llm_judgment['verdict']}")
+
+# Save updated report
+with open('ensemble_report_with_llm_judge.json', 'w') as f:
+    json.dump(report, f, indent=2)
+```
+
+**This allows you to measure:**
+- True agreement rate (including partial agreements)
+- Which disagreements are actually semantic matches
+- Model biases (does one model consistently output at wrong abstraction level?)
+
+---
+
 ## Key Takeaways
 
 1. **Ensemble diversity matters**: Different architectures (seq2seq vs causal) provide different perspectives
 2. **Agreement = confidence**: Full agreement suggests high-confidence predictions
-3. **Disagreement = ambiguity**: Highlights hard examples worth manual inspection
-4. **Memory-optimized training**: CPU-only is viable for small models (77-82M params)
-5. **Iterative scaling**: Start at 100 examples, verify pipeline, scale to 500-1000
-6. **Format adherence**: Instruction-tuned models (FLAN-T5) often have better structured outputs
+3. **Disagreement ≠ always wrong**: Many disagreements are semantic equivalents that string matching misses
+4. **Normalization helps but isn't enough**: Handles spelling/caps but not semantic gaps
+5. **Reasoning LLMs needed**: To properly judge semantic agreement, abstraction levels, and garbled output
+6. **Memory-optimized training**: CPU-only is viable for small models (77-82M params)
+7. **Iterative scaling**: Start at 100 examples, verify pipeline, scale to 500-1000
+8. **Format adherence**: Instruction-tuned models (FLAN-T5) often have better structured outputs
 
 ---
 
@@ -812,6 +1117,7 @@ for model_key in ['flan-t5-small', 'distilgpt2']:
 - **DistilGPT2 model card**: https://huggingface.co/distilgpt2
 - **Datasets library**: https://huggingface.co/docs/datasets/
 - **PyTorch tutorials**: https://pytorch.org/tutorials/
+- **LLM-as-Judge research**: [Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena](https://arxiv.org/abs/2306.05685)
 
 ---
 
@@ -829,7 +1135,9 @@ for model_key in ['flan-t5-small', 'distilgpt2']:
 - [ ] `ensemble_report.json` generated
 - [ ] Review agreement rate and format accuracy
 - [ ] Inspect 2-3 disagreement examples manually
-- [ ] Plan next experiment (scale to 200? add 3rd model? tune hyperparameters?)
+- [ ] Check `normalized_types` to see if disagreements are just spelling variations
+- [ ] Identify which disagreements are semantic matches (need LLM judge)
+- [ ] Plan next experiment (scale to 200? add 3rd model? implement LLM judge?)
 
 ---
 
