@@ -34,8 +34,8 @@
       "agreement": {
         "full_agreement": false,
         "unique_types": [
-          "Control-flow gadget",
-          "Command enable logic"
+          "Command enable logic",
+          "Control-flow gadget"
         ],
         "gadget_types": {
           "flan-t5-small": "Command enable logic",
@@ -46,8 +46,8 @@
           "distilgpt2": "controlflow"
         },
         "unique_normalized_types": [
-          "commenablelogic",
-          "controlflow"
+          "controlflow",
+          "commenablelogic"
         ],
         "majority_type": "Command enable logic",
         "majority_count": 1,
@@ -90,8 +90,8 @@
           "distilgpt2": "readwrite"
         },
         "unique_normalized_types": [
-          "readwrite",
-          "readwritesforlogix5000controllersethernetip"
+          "readwritesforlogix5000controllersethernetip",
+          "readwrite"
         ],
         "majority_type": "READ/WRITE gadgets for Logix 5000 controllers and EtherNet/IP",
         "majority_count": 1,
@@ -122,8 +122,8 @@
       "agreement": {
         "full_agreement": false,
         "unique_types": [
-          "READ/WRITE gadget",
-          "BOOL tag"
+          "BOOL tag",
+          "READ/WRITE gadget"
         ],
         "gadget_types": {
           "flan-t5-small": "READ/WRITE gadget",
@@ -134,8 +134,8 @@
           "distilgpt2": "booltag"
         },
         "unique_normalized_types": [
-          "readwrite",
-          "booltag"
+          "booltag",
+          "readwrite"
         ],
         "majority_type": "READ/WRITE gadget",
         "majority_count": 1,
@@ -178,8 +178,8 @@
           "distilgpt2": "controlflowdrivencontrollogic"
         },
         "unique_normalized_types": [
-          "identifyweirdmachine",
-          "controlflowdrivencontrollogic"
+          "controlflowdrivencontrollogic",
+          "identifyweirdmachine"
         ],
         "majority_type": "Identify weird machine",
         "majority_count": 1,
@@ -253,8 +253,8 @@
       "agreement": {
         "full_agreement": false,
         "unique_types": [
-          "Control-Flow gadgets",
-          "Control example: Control block is a kind of function block that is TRUE when a mode bit is TRUE. The function block is not executed in that cycle. The explanation: Identify the trick of a function block that is TRUE when a mode block is TRUE."
+          "Control example: Control block is a kind of function block that is TRUE when a mode bit is TRUE. The function block is not executed in that cycle. The explanation: Identify the trick of a function block that is TRUE when a mode block is TRUE.",
+          "Control-Flow gadgets"
         ],
         "gadget_types": {
           "flan-t5-small": "Control example: Control block is a kind of function block that is TRUE when a mode bit is TRUE. The function block is not executed in that cycle. The explanation: Identify the trick of a function block that is TRUE when a mode block is TRUE.",
@@ -265,8 +265,8 @@
           "distilgpt2": "controlflows"
         },
         "unique_normalized_types": [
-          "controlflows",
-          "controlexample:controlblockisakindoffunctionblockthatistruewhenamodebitistrue.thefunctionblockisnotexecutedinthatcycle.theexplanation:identifythetrickofafunctionblockthatistruewhenamodeblockistrue."
+          "controlexample:controlblockisakindoffunctionblockthatistruewhenamodebitistrue.thefunctionblockisnotexecutedinthatcycle.theexplanation:identifythetrickofafunctionblockthatistruewhenamodeblockistrue.",
+          "controlflows"
         ],
         "majority_type": "Control example: Control block is a kind of function block that is TRUE when a mode bit is TRUE. The function block is not executed in that cycle. The explanation: Identify the trick of a function block that is TRUE when a mode block is TRUE.",
         "majority_count": 1,
@@ -297,8 +297,8 @@
       "agreement": {
         "full_agreement": false,
         "unique_types": [
-          "weird machine",
-          "COMPOS"
+          "COMPOS",
+          "weird machine"
         ],
         "gadget_types": {
           "flan-t5-small": "weird machine",
@@ -353,8 +353,8 @@
           "distilgpt2": "iosideeffectsusinglogix5000physicali"
         },
         "unique_normalized_types": [
-          "iosideeffectsusinglogix5000physicali",
-          "io,sideeffect"
+          "io,sideeffect",
+          "iosideeffectsusinglogix5000physicali"
         ],
         "majority_type": "I/O, sIDE-EFFECT gadget",
         "majority_count": 1,
@@ -397,8 +397,8 @@
           "distilgpt2": "UNKNOWN"
         },
         "unique_normalized_types": [
-          "run,error,maint,runerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrore",
-          "UNKNOWN"
+          "UNKNOWN",
+          "run,error,maint,runerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrorerrore"
         ],
         "majority_type": "RUN, ERROR, MAINT, and RUN--eRROR--eRROR---eRROR---eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR--eRROR---eRROR---eRROR--eRROR--eRROR---eRROR---eRROR--e",
         "majority_count": 1,
@@ -429,8 +429,8 @@
       "agreement": {
         "full_agreement": false,
         "unique_types": [
-          "TIMING/SYNCRONIZATION gadget",
-          "Timing/SYNCHRONIZATION gadget"
+          "Timing/SYNCHRONIZATION gadget",
+          "TIMING/SYNCRONIZATION gadget"
         ],
         "gadget_types": {
           "flan-t5-small": "TIMING/SYNCRONIZATION gadget",
@@ -441,8 +441,8 @@
           "distilgpt2": "timingsynchronization"
         },
         "unique_normalized_types": [
-          "timingsyncronization",
-          "timingsynchronization"
+          "timingsynchronization",
+          "timingsyncronization"
         ],
         "majority_type": "TIMING/SYNCRONIZATION gadget",
         "majority_count": 1,
