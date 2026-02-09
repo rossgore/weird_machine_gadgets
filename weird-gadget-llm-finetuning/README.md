@@ -1,404 +1,170 @@
 # Multi-Model Ensemble Training for Weird Machine Gadget Classification
 
-## Memory-Optimized for Apple Silicon Macs
+**Universal hardware support: NVIDIA GPUs, Apple Silicon, CPU-only**
 
 ---
 
 ## Introduction
 
-In this guide, you'll learn how to fine-tune **two small language models** on weird machine gadget identification and compare their predictions through ensemble agreement analysis.
+Fine-tune **two small language models** on weird machine gadget identification and compare their predictions through ensemble agreement analysis.
 
 **Why 2 models?**
-- **Architectural diversity**: Compare seq2seq (encoder-decoder) vs causal (decoder-only) architectures
+- **Architectural diversity**: seq2seq (encoder-decoder) vs causal (decoder-only)
 - **Training paradigm diversity**: Instruction-tuned vs general pre-training
-- **Memory efficiency**: Both models fit comfortably in 6–8GB unified memory on Apple Silicon
-- **Agreement analysis**: Identify where models agree (high confidence) vs disagree (ambiguous cases)
+- **Agreement analysis**: Identify high-confidence (agreement) vs ambiguous (disagreement) cases
 
-### Models used
+### Models
 
-1. **FLAN-T5-small** (77M params) – Encoder-decoder, instruction-tuned T5
-2. **DistilGPT2** (82M params) – Decoder-only, distilled from GPT-2
-3. **Phi-2 (judge only)** (≈2.7B params) – Decoder-only reasoning LLM used *only* as an optional **semantic judge** at evaluation time (no training)
+1. **FLAN-T5-small** (77M params) – Instruction-tuned encoder-decoder
+2. **DistilGPT2** (82M params) – General-purpose decoder-only
+3. **Phi-2** (2.7B params, optional) – Semantic judge for disagreement resolution
 
-### By the end, you'll have
+### What you'll get
 
 - Two trained models with different architectures
-- An ensemble comparison report showing agreement/disagreement patterns
-- A second report (optional) with **semantic agreement** judged by Phi-2
-- Insights into which examples are "easy" (full agreement) vs "hard" (disagreement)
-- Understanding of both **string-level** and **semantic** inter-model agreement as confidence metrics
-- A template for multi-model ensemble research on student laptops
+- String-level agreement report (`ensemble_report.json`)
+- Optional semantic agreement report with Phi-2 judge (`ensemble_report_with_llm_judge.json`)
+- Understanding of ensemble confidence scoring
 
-**Expected time to complete:**
-
-- Training (100 examples): ~20–25 minutes total
-- String-level comparison: ~1–2 minutes
-- Phi-2 semantic judging on disagreements: ~1–2 minutes (10 examples, 4 disagreements)
+**Time:** ~20–30 minutes (100 examples on CPU) or ~5–10 minutes (GPU)
 
 ---
 
-## Prerequisites & Setup
+## Setup
 
-### Step 0: Environment preparation
-
-#### 0.1 Install required packages
+### Install dependencies
 
 ```bash
 pip install --upgrade pip
 
-# PyTorch (CPU version - memory-optimized)
+# PyTorch (CPU version - works everywhere)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-# Hugging Face ecosystem
-pip install "transformers[torch]"
-pip install datasets
-pip install accelerate
+# Or for NVIDIA GPU support:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
-# Utilities
-pip install scikit-learn tqdm
+# Core packages
+pip install "transformers[torch]" datasets accelerate scikit-learn tqdm
 ```
 
-**What each package does:**
-- `torch` – Deep learning framework (CPU-only to avoid memory issues)
-- `transformers` – Hugging Face models and training utilities
-- `datasets` – Load and process JSONL files efficiently
-- `accelerate` – Training utilities (used by Trainer)
-- `scikit-learn`, `tqdm` – Metrics and progress bars
-
-**Installation time:** ~5–10 minutes on first run
-
-#### 0.2 Verify installation
+### Verify setup
 
 ```bash
-python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
-python -c "import transformers; print(f'Transformers version: {transformers.__version__}')"
-python -c "import datasets; print(f'Datasets version: {datasets.__version__}')"
+python -c "import torch; print(f'PyTorch: {torch.__version__}')"
+python -c "import transformers; print(f'Transformers: {transformers.__version__}')"
 ```
 
-You should see version numbers; if you see errors, check that your virtual environment is activated.
+### Verify data
 
-#### 0.3 Verify dataset location
-
-Ensure your `weird_machine_gadgets.jsonl` file is in the `data/` directory:
+Ensure `weird_machine_gadgets.jsonl` is in the `data/` directory:
 
 ```bash
-ls data/
-# Should show: weird_machine_gadgets.jsonl
+ls data/weird_machine_gadgets.jsonl
 ```
 
 ---
 
 ## Running the script
 
-Save the provided `fine-tune-llms.py` script in your project root, then run:
+### Basic usage (auto-detects hardware)
 
 ```bash
-# For macOS/Linux:
-python fine-tune-llms.py --platform unix
+# Windows
+python fine-tune-llms-universal.py --platform windows
 
-# For Windows:
-python fine-tune-llms.py --platform windows
+# macOS/Linux
+python fine-tune-llms-universal.py --platform unix
 ```
 
-### Skip training (load existing models)
+The script automatically detects and uses:
+1. **CUDA GPU** (NVIDIA) – if available
+2. **MPS** (Apple Silicon GPU) – if available
+3. **CPU** – fallback for any hardware
 
-If you have already trained the models and just want to re-run the comparison:
+### Common options
 
 ```bash
-python fine-tune-llms.py --platform unix --skip_training
-```
+# Force CPU (useful for memory-constrained systems)
+python fine-tune-llms-universal.py --platform unix --force_cpu
 
-### Enable semantic judge (Phi-2)
+# Skip training, load existing models
+python fine-tune-llms-universal.py --platform unix --skip_training
 
-To additionally run the **Phi-2 reasoning LLM** as a semantic judge on disagreements:
+# Enable Phi-2 semantic judge
+python fine-tune-llms-universal.py --platform unix --use_judge
 
-```bash
-# Train (if needed) + compare + Phi-2 semantic judge
-python fine-tune-llms.py --platform unix --use_judge
-
-# Reuse existing FLAN-T5/DistilGPT2 checkpoints and only re-run comparison + judge
-python fine-tune-llms.py --platform unix --skip_training --use_judge
-```
-
-When `--use_judge` is enabled:
-
-- String-level results are saved to `ensemble_report_with_llm_judge.json`
-- The report includes **both** string-level and semantic agreement statistics
-
----
-
-## Step-by-step walkthrough
-
-### MEMORY OPTIMIZATION LAYER
-
-```
-================================================================================
-MEMORY OPTIMIZATION LAYER
-================================================================================
-Forcing CPU-only training to prevent out-of-memory errors...
-✓ CUDA disabled
-✓ MPS disabled (Apple Silicon GPU)
-✓ All training will use CPU only
-================================================================================
-```
-
-**What's happening:**
-
-The script **forces CPU-only training** to prevent memory errors on Apple Silicon Macs by:
-
-- Disabling CUDA (NVIDIA GPUs)
-- Disabling MPS (Metal Performance Shaders – Apple GPU)
-- Overriding PyTorch backend checks
-
-**Why:**
-
-- Apple Silicon unified memory is shared between CPU and GPU
-- MPS backend can run out of memory with larger models (e.g., full GPT‑2)
-- CPU-only is slower but **reliable** and fits in memory
-
----
-
-### STEP 1: Platform setup
-
-```
-================================================================================
-PLATFORM SETUP
-================================================================================
-✓ Platform: Unix (macOS/Linux)
-  - Multiprocessing: Enabled
-✓ CPU cores available: 8
-✓ Data loading processes: 2
-✓ PyTorch version: 2.2.2
-✓ Device: CPU (forced)
-```
-
-**What's happening:**
-
-Platform detection configures multiprocessing:
-
-- **Unix (macOS/Linux)**: Enables multiprocessing (2 processes for data loading)
-- **Windows**: Disables multiprocessing (avoids spawn issues)
-
-**In the script:** `setup_platform()` function
-
----
-
-### STEP 2: Loading and preparing data
-
-```
-================================================================================
-LOADING AND PREPARING DATA
-================================================================================
-✓ Found data/weird_machine_gadgets.jsonl
-✓ Total lines: 492
-✓ Loaded 492 examples
-✓ Subsampled to 100 examples
-✓ Train: 90 | Validation: 10
-```
-
-**What's happening:**
-
-1. **Load JSONL**: Reads all examples from the dataset
-2. **Add prompts**: Creates two prompt formats:
-   - **Seq2seq prompt** (for FLAN‑T5):  
-     `Task: {instruction}\n\nExcerpt:\n{input}\n\nAnswer:`
-   - **Causal prompt** (for DistilGPT2): includes the full answer for next-token prediction
-3. **Subsample**: Uses 100 examples (configurable via `TOTAL_EXAMPLES_TO_USE`)
-4. **Split**: 90% train, 10% validation
-
-**In the script:** `load_and_prepare_data()` function
-
-**To adjust dataset size:**
-
-```python
-# Top of fine-tune-llms.py:
-TOTAL_EXAMPLES_TO_USE = 100  # Change to 200, 500, etc.
+# Combine options
+python fine-tune-llms-universal.py --platform unix --skip_training --use_judge
 ```
 
 ---
 
-### STEP 3: Training model 1 – FLAN-T5-small
+## How it works
+
+### 1. Hardware detection
 
 ```
 ================================================================================
-TRAINING MODEL: FLAN-T5-SMALL
+DEVICE SETUP (AUTO-DETECT)
 ================================================================================
-  Model: google/flan-t5-small
-  Type: seq2seq
-  Params: 77M
-  Architecture: Bidirectional encoder + autoregressive decoder
-✓ Model loaded: T5ForConditionalGeneration
-  Parameters: 76,961,152
-  Tokenizing datasets...
-  Training...
-{'loss': 4.4353, 'epoch': 0.44}
-...
-{'train_loss': 3.9531, 'epoch': 3.0}
-✓ Training complete! Loss: 3.9531
-✓ Saved to: checkpoints/flan-t5-small/final_model
+✓ CUDA GPU detected: NVIDIA RTX 3060
+  VRAM: 12.0 GB
+  Using GPU for training
+================================================================================
 ```
 
-**What's happening:**
+Or on CPU-only systems:
+```
+✓ No GPU detected
+  Using CPU for training
+  Training will be slower but will work on any hardware
+```
 
-1. **Load model**: Downloads `google/flan-t5-small` (77M params, ~250MB)
-2. **Tokenize**: Converts prompts and outputs to token IDs  
-   - Input: up to 512 tokens  
-   - Output: up to 256 tokens
-3. **Train**: 3 epochs with batch size 1 + gradient accumulation (4 steps)
-4. **Save**: Final model saved to `checkpoints/flan-t5-small/final_model`
+### 2. Data loading
 
-**Architecture:**
+- Loads `weird_machine_gadgets.jsonl`
+- Subsamples to 100 examples (configurable)
+- Splits 90% train / 10% validation
+- Creates two prompt formats (seq2seq and causal)
 
-- Encoder‑decoder (seq2seq)
-- Bidirectional encoder (can attend to entire input)
-- Autoregressive decoder (generates left‑to‑right)
-- Instruction‑tuned (pre‑trained on instruction-following tasks)
+### 3. Training (2 models)
 
-**Training time:** ~3–5 minutes on an 8‑core CPU
+**FLAN-T5-small** (77M params)
+- Encoder-decoder architecture
+- Instruction-tuned → better format adherence
+- Training time: ~3–5 min (CPU) or ~1–2 min (GPU)
 
-**In the script:** `train_seq2seq_model()` function
+**DistilGPT2** (82M params)
+- Decoder-only architecture
+- General pre-training
+- Training time: ~3–5 min (CPU) or ~1–2 min (GPU)
+
+### 4. Ensemble comparison
+
+For each validation example:
+
+1. **Generate predictions** from both models
+2. **Extract gadget types** using regex
+3. **Normalize** (lowercase, remove "gadget", strip punctuation)
+4. **Check format** (has `gadget_type`, `location`, `explanation`?)
+5. **Compute agreement**:
+   - Full agreement = normalized gadget types match
+   - Disagreement = normalized types differ
+
+### 5. Optional: Phi-2 semantic judge
+
+With `--use_judge`, disagreements are sent to Phi-2 for semantic evaluation:
+
+- **FULL_AGREEMENT**: Semantically identical
+- **PARTIAL_AGREEMENT**: Related but different specificity
+- **DISAGREEMENT**: Truly different concepts
+- **INVALID**: Garbled or nonsensical output
 
 ---
 
-### STEP 4: Memory cleanup
+## Understanding the reports
 
-```
-  Cleaning up memory after flan-t5-small...
-  ✓ Memory freed
-```
-
-**What's happening:**
-
-Between model training runs, the script explicitly:
-
-- Frees Python references and runs garbage collection
-- Empties CUDA cache if any GPU were present (defensive)
-
-This prevents memory accumulation when training multiple models sequentially.
-
----
-
-### STEP 5: Training model 2 – DistilGPT2
-
-```
-================================================================================
-TRAINING MODEL: DISTILGPT2
-================================================================================
-  Model: distilgpt2
-  Type: causal (causal LM)
-  Params: 82M
-  Architecture: Decoder-only, left-to-right attention
-✓ Model loaded: GPT2LMHeadModel
-  Parameters: 81,912,576
-  Tokenizing datasets...
-  Training...
-{'loss': 4.4725, 'epoch': 0.44}
-...
-{'train_loss': 3.3547, 'epoch': 3.0}
-✓ Training complete! Loss: 3.3547
-✓ Saved to: checkpoints/distilgpt2/final_model
-```
-
-**What's happening:**
-
-1. **Load model**: Downloads `distilgpt2` (82M params, ~350MB)
-2. **Pad token**: GPT‑2 lacks a pad token; we set pad = EOS
-3. **Tokenize**: Converts full prompt+output into token IDs (up to 768 tokens)
-4. **Train**: 3 epochs with causal language modeling objective
-5. **Save**: Final model saved to `checkpoints/distilgpt2/final_model`
-
-**Architecture:**
-
-- Decoder‑only (causal LM)
-- Left‑to‑right attention (only attends to previous tokens)
-- Distilled from GPT‑2 (smaller, faster)
-- General pre‑training (not instruction-tuned)
-
-**Training time:** ~3–5 minutes on an 8‑core CPU
-
-**In the script:** `train_causal_model()` function
-
----
-
-### STEP 6: Ensemble comparison & string-level agreement analysis
-
-After training (or loading with `--skip_training`), both models are run on the validation set:
-
-```
-================================================================================
-ENSEMBLE COMPARISON & AGREEMENT ANALYSIS (STRING-LEVEL)
-================================================================================
-
-================================================================================
-VALIDATION EXAMPLE 1/10
-================================================================================
-
-INSTRUCTION: Identify weird machine CONTROL-FLOW gadgets in the excerpt...
-EXCERPT: Command enable logic uses a general enable contact...
-
-  [flan-t5-small] Generating...
-  Output: gadget_type: Command enable logic; location: Command enable logic...
-
-  [distilgpt2] Generating...
-  Output: gadget_type: Control-Flow gadget; location: Control-Flow gadget...
-
-────────────────────────────────────────────────────────────────────────────────
-AGREEMENT ANALYSIS (STRING-LEVEL):
-────────────────────────────────────────────────────────────────────────────────
-  Full agreement (normalized): ✗ NO
-  Unique raw gadget types: ['Command enable logic', 'Control-Flow gadget']
-  Unique normalized types: ['commenablelogic', 'controlflow']
-  Majority type: Command enable logic (1/2)
-
-  Model-specific gadget types:
-    - flan-t5-small: Command enable logic
-    - distilgpt2: Control-Flow gadget
-
-  Format checks:
-    ✓ flan-t5-small: {'gadget_type': True, 'location': True, 'explanation': True}
-    ✓ distilgpt2: {'gadget_type': True, 'location': True, 'explanation': True}
-```
-
-**What's happening:**
-
-For each validation example, the script:
-
-1. **Generates predictions**: Both models get the same prompt
-2. **Extracts gadget types**: Parses `gadget_type:` from each prediction
-3. **Normalizes gadget types**:
-   - Lowercase
-   - Strip "gadget" / "gadgets"
-   - Remove spaces, hyphens, underscores, slashes
-   - Remove "and"
-4. **Checks format**: Ensures outputs contain required fields (`gadget_type`, `location`, `explanation`)
-5. **Computes agreement**:
-   - **Full agreement (normalized)**: All normalized gadget types match → high confidence
-   - **Disagreement**: Normalized types differ → ambiguous or semantically different
-
-**Agreement metrics:**
-
-- `full_agreement`: Boolean – do **normalized** gadget types all match?
-- `gadget_types`: Dict model → raw gadget type (e.g., `"Read/Write gadget"`)
-- `unique_types`: List of distinct raw gadget types
-- `normalized_types`: Dict model → normalized gadget type (e.g., `"readwrite"`)
-- `unique_normalized_types`: Distinct normalized types (used for agreement)
-- `majority_type`: Majority gadget type (using normalized vote, but reported with a representative raw label)
-- `majority_count`: Number of models voting for the majority type
-- `total_models`: Number of models in the ensemble (here, 2)
-
-**In the script:** `compute_agreement()` and `run_ensemble_comparison()` functions
-
----
-
-### STEP 7: Saving comparison report (string-only)
-
-With `--use_judge` disabled, results are saved to:
-
-```
-ensemble_report.json
-```
-
-The JSON structure:
+### String-level report (`ensemble_report.json`)
 
 ```json
 {
@@ -410,209 +176,67 @@ The JSON structure:
     "model_format_accuracy": {
       "flan-t5-small": 1.0,
       "distilgpt2": 0.4
-    },
-    "llm_judge_used": false
-  },
-  "results": [
-    {
-      "example_id": 0,
-      "instruction": "...",
-      "excerpt": "...",
-      "gold_output": "...",
-      "predictions": {
-        "flan-t5-small": "...",
-        "distilgpt2": "..."
-      },
-      "format_checks": {
-        "flan-t5-small": {"gadget_type": true, "location": true, "explanation": true},
-        "distilgpt2": {"gadget_type": true, "location": true, "explanation": true}
-      },
-      "agreement": {
-        "full_agreement": false,
-        "gadget_types": {
-          "flan-t5-small": "Command enable logic",
-          "distilgpt2": "Control-Flow gadget"
-        },
-        "unique_types": ["Command enable logic", "Control-Flow gadget"],
-        "normalized_types": {
-          "flan-t5-small": "commenablelogic",
-          "distilgpt2": "controlflow"
-        },
-        "unique_normalized_types": ["commenablelogic", "controlflow"],
-        "majority_type": "Command enable logic",
-        "majority_count": 1,
-        "total_models": 2
-      }
     }
-  ]
+  }
 }
 ```
 
----
+**Key metrics:**
+- `full_agreement_rate`: % where normalized gadget types match (higher = more consistent)
+- `model_format_accuracy`: % of outputs with correct format
 
-## Optional semantic judge with Phi-2
+**Typical results (100 examples):**
+- String agreement: 30–60%
+- FLAN-T5 format accuracy: 80–100%
+- DistilGPT2 format accuracy: 30–60%
 
-When you run with `--use_judge`, the script performs an additional **semantic evaluation** step using a local Phi‑2 model (`microsoft/phi-2`) on CPU:
+### Semantic report (`ensemble_report_with_llm_judge.json`)
 
-```bash
-python fine-tune-llms.py --platform unix --skip_training --use_judge
+With `--use_judge`, you also get:
+
+```json
+{
+  "summary": {
+    "semantic_agreements": 8,
+    "semantic_agreement_rate": 0.8,
+    ...
+  }
+}
 ```
 
-### What changes when `--use_judge` is on?
-
-1. The base ensemble run is exactly the same (string-level agreement as before).
-2. For **string-level disagreements only**, the script:
-   - Sends the FLAN‑T5 and DistilGPT2 full predictions plus the gold output to Phi‑2
-   - Asks Phi‑2 to decide between:
-     - `FULL_AGREEMENT`
-     - `PARTIAL_AGREEMENT`
-     - `DISAGREEMENT`
-     - `INVALID`
-   - Records a short natural language explanation
-3. The report is saved as:
-
-```
-ensemble_report_with_llm_judge.json
-```
-
-### New fields in the report
-
-Each result now includes:
-
-- `agreement.semantic_agreement`: 
-  - `True` if either:
-    - String-level `full_agreement` was already true, or
-    - Phi‑2 judged the predictions as `FULL_AGREEMENT` or `PARTIAL_AGREEMENT`
-  - `False` otherwise
-- `agreement.llm_judgment` (only for cases sent to the judge):
-  - `verdict`: one of the four labels above
-  - `explanation`: one-sentence reason from Phi‑2
-
-The summary gains:
-
-- `semantic_agreements`: Number of examples with `semantic_agreement = True`
-- `semantic_agreement_rate`: Proportion of examples with semantic agreement
-- `llm_judge_used`: `true` when `--use_judge` was enabled and the judge ran
-
-This allows you to contrast:
-
-- **String-level agreement rate** (normalized tokens)
-- **Semantic agreement rate** (string + Phi‑2 reasoning)
+**Improvement:** Phi-2 typically increases agreement rate by +10–20% by detecting:
+- Capitalization differences ("ReadWrite" vs "READWRITE")
+- Abstraction mismatches ("BOOL tag" vs "Read/Write gadget")
+- Truncated but valid labels
 
 ---
 
-## Understanding the reports
+## Why string normalization isn't enough
 
-### String-level summary (`ensemble_report.json`)
+String normalization handles:
+✅ Capitalization: `"ReadWrite"` vs `"READWRITE"` → both `"readwrite"`
+✅ Hyphens: `"Control-Flow"` vs `"ControlFlow"` → both `"controlflow"`
 
-Key fields:
+But **cannot** detect:
+❌ Semantic equivalence: `"Command enable logic"` vs `"Control-Flow gadget"`
+❌ Abstraction levels: `"BOOL tag"` (specific) vs `"Read/Write gadget"` (category)
+❌ Garbled output: `"Control example Control block is a kind..."`
 
-- `full_agreement_rate`: Fraction of examples where **normalized** gadget types match
-- `disagreement_rate`: Fraction where normalized gadget types differ
-- `model_format_accuracy`: Fraction of examples where that model's output includes all three fields (`gadget_type`, `location`, `explanation`)
-
-With 100 training examples, it is common to see:
-
-- String-level agreement in the range 30–60% after normalization
-- Format accuracy:
-  - Higher for FLAN‑T5 (instruction‑tuned)
-  - Lower for DistilGPT2 (general model)
-
-### Semantically-aware summary (`ensemble_report_with_llm_judge.json`)
-
-When `--use_judge` is enabled, compare:
-
-- `full_agreement_rate` vs `semantic_agreement_rate`
-  - `semantic_agreement_rate` should be **higher**, because Phi‑2 can detect:
-    - Conceptually similar gadget types with different wording
-    - Truncated or slightly malformed labels that are still clearly similar
-
-Example:
-
-- String-level: 6/10 full agreements (60%)
-- Phi‑2 semantic: 8/10 semantic agreements (80%)
+**Solution:** Phi-2 semantic judge (`--use_judge`) bridges this gap.
 
 ---
 
-## Limitations of simple string normalization
+## Configuration
 
-### The semantic gap problem
-
-The current script uses **string normalization** (lowercase, remove punctuation and "gadget", strip connectors) to handle minor variations such as:
-
-✅ **Works well for:**
-
-- Capitalization: `"ReadWrite gadget"` vs `"READWRITE gadget"` → both → `"readwrite"`
-- Hyphens: `"Control-Flow gadget"` vs `"Control FLOW gadget"` → both → `"controlflow"`
-- Spacing: `"I/O and SIDE-EFFECT gadget"` vs `"I/O AND SIDE EFFECT gadgets"` → both → `"iosideeffect"`
-- Minor rephrasing with "gadget" suffixes
-
-❌ **Does NOT work for semantic differences:**
-
-| Example | FLAN‑T5 output | DistilGPT2 output | Issue |
-|--------|----------------|-------------------|-------|
-| 0 | `"Command enable logic"` | `"Control-Flow gadget"` | Specific mechanism vs generic category |
-| 4 | `"Alarm and Condition Objects"` | `"Read/Write gadget"` | Alarm state variables vs generic read/write |
-| 9 | `"Timing/Synthetic gadget"` | `"Timing/SYNCHRONIZ"` | Full label vs truncated category |
-
-### Why this matters
-
-String normalization cannot detect:
-
-1. **Semantic equivalence**: "Command enable logic" and "Control‑Flow gadget" both relate to control flow but differ in specificity.
-2. **Abstraction level**: "BOOL tag" vs "Read/Write gadget" is like "Honda Civic" vs "car".
-3. **Garbled or truncated output**: Especially on the causal model when generation diverges.
-4. **Partial correctness**: One model may be more precise while the other is more generic.
-
-### Local reasoning LLM (Phi‑2) as judge
-
-The Phi‑2 semantic judge helps close this gap:
-
-1. **Judges semantic equivalence**:
-   - Are the gadget types conceptually the same, even if the strings differ?
-2. **Detects abstraction mismatches**:
-   - Is one output a specific instance of the other's category?
-3. **Flags invalid outputs**:
-   - Repetitive, nonsensical, or incomplete gadget labels
-4. **Scores partial correctness**:
-   - Distinguishes "FULL_AGREEMENT" vs "PARTIAL_AGREEMENT" vs "DISAGREEMENT" vs "INVALID"
-
-The pipeline becomes:
-
-- **Phase 1 – String-level (cheap, deterministic):**
-
-  ```
-  Model A → "Read/Write gadget"  ──┐
-                                   ├─→ normalize() → string match → AGREEMENT
-  Model B → "READ/WRITE gadget"  ──┘
-  ```
-
-- **Phase 2 – Semantic (expensive, but only on disagreements):**
-
-  ```
-  Model A → "Command enable logic"  ──┐
-                                      ├─→ Phi-2 → verdict + explanation
-  Model B → "Control-Flow gadget"   ──┘
-  ```
-
-Phi‑2 is only called on the subset of examples where normalized gadget types differ (disagreements), which keeps compute manageable on student laptops.
-
----
-
-## Configuration & tuning
-
-### Key configuration variables
-
-At the top of `fine-tune-llms.py`:
+Edit constants at the top of `fine-tune-llms-universal.py`:
 
 ```python
 # Dataset sizing
-TOTAL_EXAMPLES_TO_USE = 100  # ← change this for more data
+TOTAL_EXAMPLES_TO_USE = 100  # Increase to 200, 500, etc.
 EVAL_SPLIT = 0.1             # 10% validation
 
-# Training hyperparameters (shared across models)
+# Training hyperparameters
 TRAIN_BATCH_SIZE = 1
-EVAL_BATCH_SIZE = 1
 GRADIENT_ACCUMULATION_STEPS = 4
 LEARNING_RATE = 5e-5
 NUM_EPOCHS = 3
@@ -620,40 +244,10 @@ MAX_INPUT_LENGTH = 512
 MAX_TARGET_LENGTH = 256
 ```
 
-### Scaling up
-
-**Phase 1: Increase dataset size**
-
-```python
-TOTAL_EXAMPLES_TO_USE = 200  # or 300, 500
-```
-
-Expected effects:
-
-- Higher agreement rate
-- Better format accuracy
-- More stable predictions
-
-**Phase 2: Increase epochs**
-
-```python
-NUM_EPOCHS = 5  # or 10
-```
-
-Trade‑off: Better quality vs longer training time.
-
-**Phase 3: Adjust learning rate**
-
-```python
-LEARNING_RATE = 1e-5  # for stability
-# or
-LEARNING_RATE = 1e-4  # for faster convergence
-```
-
-Rule of thumb:
-
-- If loss plateaus early → increase learning rate
-- If loss is unstable → decrease learning rate
+**To scale up:**
+- More data: `TOTAL_EXAMPLES_TO_USE = 500` → better accuracy
+- More epochs: `NUM_EPOCHS = 5` → lower loss
+- Adjust learning rate: `1e-5` (stable) or `1e-4` (faster)
 
 ---
 
@@ -661,9 +255,7 @@ Rule of thumb:
 
 ### 1. Agreement pattern analysis
 
-**Question:** Which examples cause disagreement between models?
-
-**How to explore:**
+**Question:** Which examples cause disagreement?
 
 ```python
 import json
@@ -671,69 +263,50 @@ import json
 with open('ensemble_report.json', 'r') as f:
     report = json.load(f)
 
-# Find disagreements (string-level)
-disagreements = [
-    r for r in report['results']
-    if not r['agreement']['full_agreement']
-]
+disagreements = [r for r in report['results'] 
+                 if not r['agreement']['full_agreement']]
 
-print(f"Found {len(disagreements)} string-level disagreements")
-for d in disagreements:
-    print(f"\nExample {d['example_id']}:")
-    print(f"  Instruction: {d['instruction'][:80]}...")
+for d in disagreements[:5]:
+    print(f"Example {d['example_id']}:")
     print(f"  FLAN-T5: {d['agreement']['gadget_types']['flan-t5-small']}")
     print(f"  DistilGPT2: {d['agreement']['gadget_types']['distilgpt2']}")
-    print(f"  Normalized FLAN-T5: {d['agreement']['normalized_types']['flan-t5-small']}")
-    print(f"  Normalized DistilGPT2: {d['agreement']['normalized_types']['distilgpt2']}")
-    print(f"  Gold: {d['gold_output'][:80]}...")
+    print(f"  Normalized T5: {d['agreement']['normalized_types']['flan-t5-small']}")
+    print(f"  Normalized GPT2: {d['agreement']['normalized_types']['distilgpt2']}")
 ```
 
-**Hypotheses to test:**
-
+**Hypotheses:**
 - Do disagreements correlate with excerpt length?
-- Are some gadget types more ambiguous?
-- Does heavy technical jargon increase disagreements?
-- Do normalized types show that some apparent disagreements are just spelling/capitalization issues?
+- Are certain gadget types more ambiguous?
+- Does normalization reveal spelling/capitalization issues?
 
 ---
 
 ### 2. Architectural comparison
 
-**Question:** Does the seq2seq model (FLAN‑T5) outperform the causal LM (DistilGPT2)?
+**Question:** Does instruction-tuned seq2seq outperform general causal LM?
 
-**Metrics to compare:**
-
+**Compare:**
 - Format accuracy (from `model_format_accuracy`)
-- Agreement with the gold standard (manually or with an external script)
-- Training loss (final values printed at the end of training)
+- Training loss (final values in console output)
+- Qualitative inspection of predictions
 
-**Hypotheses:**
-
-- Instruction‑tuned models (FLAN‑T5) should have better format adherence
-- Seq2seq models should handle longer contexts and structured output better
+**Hypothesis:** FLAN-T5 should have better format adherence.
 
 ---
 
 ### 3. Confidence via agreement
 
-**Question:** Can we use inter‑model agreement as a confidence score?
-
-**Approach:**
-
-1. Label validation examples:
-   - High confidence = string-level full agreement
-   - Low confidence = string-level disagreement
-2. Manually inspect a sample from each category.
-3. Measure: Are high‑confidence predictions more accurate than low‑confidence ones?
-
-**Implementation:**
+**Question:** Are high-agreement predictions more accurate?
 
 ```python
-high_conf = [r for r in report['results'] if r['agreement']['full_agreement']]
-low_conf = [r for r in report['results'] if not r['agreement']['full_agreement']]
+high_conf = [r for r in report['results'] 
+             if r['agreement']['full_agreement']]
+low_conf = [r for r in report['results'] 
+            if not r['agreement']['full_agreement']]
 
-print(f"High confidence (string-level): {len(high_conf)} examples")
-print(f"Low confidence (string-level): {len(low_conf)} examples")
+print(f"High confidence: {len(high_conf)} examples")
+print(f"Low confidence: {len(low_conf)} examples")
+# Manually inspect accuracy in each group
 ```
 
 ---
@@ -742,8 +315,6 @@ print(f"Low confidence (string-level): {len(low_conf)} examples")
 
 **Question:** Which gadget types are hardest to classify?
 
-**Approach:**
-
 ```python
 from collections import defaultdict
 import re
@@ -751,214 +322,148 @@ import re
 errors_by_type = defaultdict(list)
 
 for r in report['results']:
-    # Extract gold gadget type from the gold_output string
     m = re.search(r"gadget_type:\s*([^;\n]+)", r['gold_output'])
-    if not m:
-        continue
-    gold_type = m.group(1).strip()
-
-    if not r['agreement']['full_agreement']:
+    if m and not r['agreement']['full_agreement']:
+        gold_type = m.group(1).strip()
         errors_by_type[gold_type].append(r['example_id'])
 
 for gtype, examples in errors_by_type.items():
-    print(f"{gtype}: {len(examples)} string-level disagreements")
+    print(f"{gtype}: {len(examples)} disagreements")
 ```
 
 ---
 
-### 5. Majority voting performance
+### 5. Semantic agreement analysis
 
-**Question:** Does ensemble voting help with more models?
+**Question:** How much do semantic judgments improve agreement?
 
-**Approach:**
-
-1. Conceptually extend to 3+ models.
-2. For each example, take a majority vote on gadget type (using normalized labels).
-3. Compare majority vote vs individual model accuracy.
-
-With only 2 models, ties are common; with 3 or more, majority voting is more informative.
-
----
-
-### 6. Semantic agreement analysis (Phi‑2 vs string-only)
-
-**Question:** How many string-level "disagreements" are actually **semantic agreements**?
-
-**Approach (requires `--use_judge` report):**
+**Requires:** Run with `--use_judge`
 
 ```python
-import json
-
 with open('ensemble_report_with_llm_judge.json', 'r') as f:
     report = json.load(f)
 
-results = report['results']
-
-# Cases where string-level disagrees but Phi-2 says semantic_agreement = True
 upgraded = [
-    r for r in results
+    r for r in report['results']
     if (not r['agreement']['full_agreement'])
     and r['agreement'].get('semantic_agreement', False)
 ]
 
-print(f"String-level disagreements reclassified as semantic agreements: {len(upgraded)}")
-for r in upgraded:
+print(f"String disagreements → Semantic agreements: {len(upgraded)}")
+for r in upgraded[:3]:
     j = r['agreement']['llm_judgment']
     print(f"\nExample {r['example_id']}:")
-    print(f"  FLAN-T5 gadget_type: {r['agreement']['gadget_types']['flan-t5-small']}")
-    print(f"  DistilGPT2 gadget_type: {r['agreement']['gadget_types']['distilgpt2']}")
-    print(f"  Phi-2 verdict: {j['verdict']}")
-    print(f"  Phi-2 explanation: {j['explanation'][:120]}...")
+    print(f"  Verdict: {j['verdict']}")
+    print(f"  Explanation: {j['explanation'][:100]}...")
 ```
 
-**Discussion questions:**
-
-- Do you agree with Phi‑2's upgrades to `FULL_AGREEMENT` or `PARTIAL_AGREEMENT`?
-- Are there cases where you think Phi‑2 is wrong?
-- How much does semantic agreement differ from string-level agreement?
+**Discussion:**
+- Do you agree with Phi-2's verdicts?
+- Are there false positives (should be DISAGREEMENT)?
+- What % improvement does semantic judging provide?
 
 ---
 
-### 7. Effect of the local reasoning LLM (Phi‑2)
+### 6. Effect of the reasoning judge
 
-**Question:** How much does Phi‑2 change your view of model reliability?
+**Question:** Does Phi-2 mostly fix string quirks or semantic gaps?
 
-**Suggested exploration:**
+**Analyze Phi-2 verdicts:**
+- `FULL_AGREEMENT`: Exact semantic match (likely string variation)
+- `PARTIAL_AGREEMENT`: Related concepts, different specificity
+- `DISAGREEMENT`: Truly different
+- `INVALID`: Garbled output
 
-1. Compare `summary["full_agreement_rate"]` vs `summary["semantic_agreement_rate"]`.
-2. Inspect examples where Phi‑2 says:
-   - `FULL_AGREEMENT`
-   - `PARTIAL_AGREEMENT`
-   - `DISAGREEMENT`
-   - `INVALID`
-3. For `INVALID` cases, look at the raw model outputs:
-   - Are they garbled or structurally broken?
-4. For `PARTIAL_AGREEMENT`, look at abstraction mismatches:
-   - Example: "Timer TON block" vs "Timing/Synchronization gadget"
+**Example analysis:**
+```python
+verdicts = {}
+for r in report['results']:
+    if 'llm_judgment' in r['agreement']:
+        v = r['agreement']['llm_judgment']['verdict']
+        verdicts[v] = verdicts.get(v, 0) + 1
 
-**Guiding questions:**
-
-- Does Phi‑2 mostly correct for string quirks (capitalization, truncation)?
-- Does it ever hallucinate or misjudge obvious differences?
-- Would you trust Phi‑2's verdict as a grading signal for student-written gadget labels?
+print(verdicts)
+# e.g., {'FULL_AGREEMENT': 1, 'PARTIAL_AGREEMENT': 2, 'DISAGREEMENT': 1}
+```
 
 ---
 
 ## Troubleshooting
 
-### Issue: `RuntimeError: MPS backend out of memory`
+### Out of memory (GPU)
 
-**Cause:** Accidentally using the Apple GPU (MPS) on Apple Silicon.
+**Symptom:** `CUDA out of memory` or `MPS backend out of memory`
 
-**Solution:** The script already forces CPU-only; verify the banner:
-
-```
-✓ MPS disabled (Apple Silicon GPU)
-✓ All training will use CPU only
+**Solution:**
+```bash
+python fine-tune-llms-universal.py --platform unix --force_cpu
 ```
 
-If you still see this, ensure the memory optimization code is at the very top of `fine-tune-llms.py` and that no other script is enabling MPS.
-
----
-
-### Issue: `TypeError: ... generate() argument after ** must be a mapping`
-
-**Cause:** Passing `**inputs["input_ids"]` instead of the entire `inputs` dict.
-
-**Solution:** The script has been fixed to:
-
+Or reduce dataset size:
 ```python
-outputs = model.generate(
-    inputs["input_ids"],              # direct tensor
-    attention_mask=inputs.get("attention_mask"),
-    max_new_tokens=max_new_tokens,
-    do_sample=False,
-    pad_token_id=tokenizer.eos_token_id,
-)
+TOTAL_EXAMPLES_TO_USE = 50  # in script
 ```
 
 ---
 
-### Issue: Training too slow on CPU
+### Training too slow
 
-**This is expected.** To speed up:
+**This is normal on CPU.** To speed up:
 
-1. Temporarily reduce dataset size:
+1. **Reduce dataset:** `TOTAL_EXAMPLES_TO_USE = 50`
+2. **Fewer epochs:** `NUM_EPOCHS = 2`
+3. **Shorter sequences:** `MAX_INPUT_LENGTH = 256`
+4. **Close other apps** to free CPU cores
 
-   ```python
-   TOTAL_EXAMPLES_TO_USE = 50
-   ```
-
-2. Reduce sequence lengths:
-
-   ```python
-   MAX_INPUT_LENGTH = 256
-   MAX_TARGET_LENGTH = 128
-   ```
-
-3. Use fewer epochs:
-
-   ```python
-   NUM_EPOCHS = 2
-   ```
-
-4. Close other CPU-heavy applications.
+**Expected times (100 examples):**
+- GPU: ~5–10 minutes total
+- CPU (8 cores): ~20–30 minutes total
+- CPU (4 cores): ~40–60 minutes total
 
 ---
 
-### Issue: Model outputs are gibberish
+### Gibberish outputs
 
-**Possible causes:**
-
-- Too little training data (100 examples is minimal)
+**Causes:**
+- Too little training data (100 is minimal)
 - Learning rate too high
-- Generation parameters too permissive (e.g., high temperature, sampling)
+- Model diverged
 
-**Potential fixes:**
-
-1. Increase `TOTAL_EXAMPLES_TO_USE` to 200+
-2. Lower `LEARNING_RATE` to `1e-5`
-3. Increase `NUM_EPOCHS` to 5
-4. Keep `do_sample=False` and low `max_new_tokens` during evaluation
+**Fixes:**
+1. Increase to 200+ examples
+2. Lower `LEARNING_RATE = 1e-5`
+3. Increase `NUM_EPOCHS = 5`
 
 ---
 
-### Issue: Low agreement rate (<20%)
+### Low agreement rate (<20%)
 
-With very small datasets and no normalization, this is common.
+**Expected with 100 examples and string-only comparison.**
 
 **Improvements:**
-
-1. Ensure you are using normalized gadget types (the current script does this).
-2. Scale to 500–1000 examples.
-3. Increase epochs to 5–10.
-4. Use `--use_judge` to incorporate Phi‑2 semantic judgments.
-5. Optionally upgrade FLAN‑T5‑small to FLAN‑T5‑base for higher-capacity seq2seq.
+1. Scale to 500–1000 examples
+2. Increase epochs to 5–10
+3. Use `--use_judge` for semantic evaluation
+4. Upgrade to `flan-t5-base` (250M params) for better quality
 
 ---
 
-### Issue: High disagreement rate but predictions "look similar"
+### Windows multiprocessing errors
 
-This is exactly the **semantic gap** problem.
+**The script already disables multiprocessing on Windows.** If you still see errors:
 
-Examples:
+```python
+# In the script, verify:
+dataloader_num_workers = 0  # for Windows
+```
 
-- Spelling or truncation: `"Timing/SYNCHRONIZ"` vs `"Timing/Synchronization gadget"`
-- Capitalization: `"Read/Write gadget"` vs `"READ/WRITE gadget"`
-- Specific vs category: `"Command enable logic"` vs `"Control-Flow gadget"`
-
-**What to try:**
-
-- Inspect `agreement["normalized_types"]` to see if normalization is working.
-- If it is, enable `--use_judge` to see which cases Phi‑2 upgrades to `PARTIAL_AGREEMENT` or `FULL_AGREEMENT`.
+This is handled automatically by `setup_platform()`.
 
 ---
 
 ## Advanced experiments
 
-### Experiment 1: Add a third model
-
-Extend the `MODELS` dict:
+### Add a third model
 
 ```python
 MODELS = {
@@ -974,49 +479,37 @@ MODELS = {
 }
 ```
 
-Trade‑off: slower training, potentially better accuracy and more interesting 3‑way comparisons and majority voting.
+**Trade-off:** Slower (~15 min on CPU) but better accuracy and 3-way voting.
 
 ---
 
-### Experiment 2: Custom inference script
+### Custom inference
 
-Use your fine‑tuned FLAN‑T5 and DistilGPT2 for custom excerpts:
+Use your trained models on new excerpts:
 
 ```python
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM
-import torch
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
 # Load FLAN-T5
-t5_tokenizer = AutoTokenizer.from_pretrained('checkpoints/flan-t5-small/final_model')
-t5_model = AutoModelForSeq2SeqLM.from_pretrained('checkpoints/flan-t5-small/final_model')
+tokenizer = AutoTokenizer.from_pretrained('checkpoints/flan-t5-small/final_model')
+model = AutoModelForSeq2SeqLM.from_pretrained('checkpoints/flan-t5-small/final_model')
 
-# Load DistilGPT2
-gpt_tokenizer = AutoTokenizer.from_pretrained('checkpoints/distilgpt2/final_model')
-gpt_model = AutoModelForCausalLM.from_pretrained('checkpoints/distilgpt2/final_model')
-
+# Your custom input
 instruction = "Identify weird machine ARITHMETIC/COMPUTATION gadgets..."
 excerpt = "The ADD instruction adds two integer values..."
 prompt = f"Task: {instruction}\n\nExcerpt:\n{excerpt}\n\nAnswer:"
 
-# FLAN-T5 prediction
-t5_inputs = t5_tokenizer(prompt, return_tensors="pt")
-t5_outputs = t5_model.generate(**t5_inputs, max_new_tokens=256)
-t5_pred = t5_tokenizer.decode(t5_outputs[0], skip_special_tokens=True)
+# Generate
+inputs = tokenizer(prompt, return_tensors="pt")
+outputs = model.generate(**inputs, max_new_tokens=256)
+prediction = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-# DistilGPT2 prediction
-gpt_inputs = gpt_tokenizer(prompt, return_tensors="pt")
-gpt_outputs = gpt_model.generate(gpt_inputs["input_ids"], max_new_tokens=256)
-gpt_pred = gpt_tokenizer.decode(gpt_outputs[0], skip_special_tokens=True)
-
-print(f"FLAN-T5: {t5_pred}")
-print(f"DistilGPT2: {gpt_pred.split('Answer:')[-1].strip()}")
+print(prediction)
 ```
 
 ---
 
-### Experiment 3: Measure ROUGE scores
-
-Quantify prediction quality:
+### Measure ROUGE scores
 
 ```bash
 pip install rouge-score
@@ -1034,67 +527,55 @@ with open('ensemble_report.json', 'r') as f:
 for model_key in ['flan-t5-small', 'distilgpt2']:
     scores = []
     for r in report['results']:
-        gold = r['gold_output']
-        pred = r['predictions'][model_key]
-        score = scorer.score(gold, pred)
+        score = scorer.score(r['gold_output'], r['predictions'][model_key])
         scores.append(score['rougeL'].fmeasure)
 
-    avg_score = sum(scores) / len(scores)
-    print(f"{model_key} ROUGE-L: {avg_score:.3f}")
+    print(f"{model_key} ROUGE-L: {sum(scores)/len(scores):.3f}")
 ```
-
----
-
-### Experiment 4: Compare local Phi‑2 judge vs a cloud LLM
-
-As an advanced exercise, you can:
-
-1. Use the existing Phi‑2 judge for local judgments.
-2. Implement a remote "LLM‑as‑a‑judge" call (e.g., GPT‑4, Claude) for the same disagreements.
-3. Compare:
-
-   - Agreement between Phi‑2 and the cloud model
-   - Which examples they disagree on
-   - Whether one is consistently stricter or more lenient
-
-This helps students reason about **judge reliability** and **evaluation bias**.
 
 ---
 
 ## Key takeaways
 
-1. **Ensemble diversity matters**: Different architectures (seq2seq vs causal) provide different perspectives.
-2. **String normalization helps**: It handles capitalization, spacing, and "gadget" suffixes.
-3. **Disagreement ≠ always wrong**: Many string-level disagreements are semantic matches.
-4. **Reasoning LLMs add value**: Phi‑2 can identify partial agreements, abstraction mismatches, and invalid outputs.
-5. **Local judges are feasible**: A 2.7B‑parameter Phi‑2 model can run on student laptops using CPU‑only.
-6. **Format adherence differs by architecture**: FLAN‑T5 usually adheres more strictly to the required `gadget_type/location/explanation` schema.
-7. **Iterative scaling is important**: Start at 100 examples to debug, then scale to 200–500+ for better accuracy.
+1. **Hardware flexibility**: Works on any system (GPU or CPU)
+2. **String normalization**: Handles capitalization/spacing but not semantic gaps
+3. **Semantic judge adds value**: Phi-2 detects abstraction mismatches and partial correctness
+4. **Agreement = confidence**: Full agreement suggests reliable predictions
+5. **Instruction-tuning matters**: FLAN-T5 has better format adherence than DistilGPT2
+6. **Scale iteratively**: Start at 100 examples, verify pipeline, scale to 500+
 
 ---
 
-## Summary checklist
+## Quick reference
 
-**Before you start:**
+| Task | Command |
+|------|---------|
+| Train + compare (auto-detect hardware) | `python fine-tune-llms-universal.py --platform unix` |
+| Force CPU (low memory) | `python fine-tune-llms-universal.py --platform unix --force_cpu` |
+| Skip training, compare only | `python fine-tune-llms-universal.py --platform unix --skip_training` |
+| Enable Phi-2 semantic judge | `python fine-tune-llms-universal.py --platform unix --use_judge` |
+| Windows users | `python fine-tune-llms-universal.py --platform windows` |
 
+---
+
+## Checklist
+
+**Before starting:**
 - [ ] Dependencies installed (`torch`, `transformers`, `datasets`, etc.)
 - [ ] `data/weird_machine_gadgets.jsonl` exists
-- [ ] `fine-tune-llms.py` saved in project root
+- [ ] `fine-tune-llms-universal.py` in project root
 - [ ] ~5 GB free disk space
-- [ ] 8+ GB RAM (for CPU training)
-- [ ] Optional: ~5–6 GB extra RAM headroom if using `--use_judge` with Phi‑2
+- [ ] 8+ GB RAM
 
-**After training and comparison:**
-
-- [ ] Both models trained successfully (check `checkpoints/` directories)
+**After running:**
+- [ ] Models trained (check `checkpoints/` directories)
 - [ ] `ensemble_report.json` generated
-- [ ] Review string-level agreement rate and format accuracy
-- [ ] Inspect 2–3 string-level disagreement examples manually
-- [ ] Check `normalized_types` to see if some disagreements are just spelling/case variants
-- [ ] Optionally run with `--use_judge` to get `ensemble_report_with_llm_judge.json`
-- [ ] Compare string-level vs semantic agreement rates
-- [ ] Plan your next experiment (scale data, adjust hyperparameters, or extend the ensemble)
+- [ ] Review agreement rate and format accuracy
+- [ ] Inspect 2–3 disagreement examples
+- [ ] Check if normalization resolved spelling issues
+- [ ] (Optional) Run with `--use_judge` for semantic analysis
+- [ ] Plan next experiment (scale data? add model? tune hyperparameters?)
 
 ---
 
-**Happy ensemble training and semantic judging!** 🚀
+**Happy ensemble training!** 🚀

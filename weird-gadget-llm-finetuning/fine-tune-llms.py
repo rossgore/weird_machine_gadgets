@@ -1,46 +1,21 @@
+#!/usr/bin/env python3
 """
-Multi-Model Ensemble Training and Agreement Analysis (Memory-Optimized for Mac)
-
-Train 2 different small LLMs on weird machine gadgets dataset and compare where they agree/disagree.
-
-Models:
-1. google/flan-t5-small (77M params, encoder-decoder, instruction-tuned)
-2. distilgpt2 (82M params, decoder-only causal LM, distilled from GPT-2)
-
-This version is optimized for Apple Silicon Macs with limited memory by:
-- Forcing CPU-only execution (disables MPS)
-- Using only 2 smaller models instead of 3
-- Explicit memory cleanup between training runs
-
-New in this version:
-- String-normalized agreement (handles capitalization/spacing)
-- Optional lightweight reasoning LLM judge (Phi-3-mini) to score semantic agreement
-
-Usage:
-    # Basic (train + compare, string-only agreement)
-    python main.py --platform unix
-
-    # Skip training, just re-run comparison
-    python main.py --platform unix --skip_training
-
-    # Train + compare with reasoning judge
-    python main.py --platform unix --use_judge
-
-Architectural diversity: 1 seq2seq vs 1 causal LM
-Training paradigm diversity: instruction-tuned vs general pre-training
+Multi-Model Ensemble Training for Weird Machine Gadget Classification
+Universal version - works on various hardware configurations
 """
 
 import os
 import sys
 import json
-import argparse
 import gc
+import argparse
+import platform
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from collections import Counter
+import re
 
 import torch
-from datasets import load_dataset
 from transformers import (
     AutoTokenizer,
     AutoModelForSeq2SeqLM,
@@ -52,42 +27,17 @@ from transformers import (
     DataCollatorForSeq2Seq,
     DataCollatorForLanguageModeling,
 )
-
-
-# ============================================================================
-# MEMORY OPTIMIZATION: Force CPU, disable MPS and CUDA
-# ============================================================================
-
-print("\n" + "=" * 80)
-print("MEMORY OPTIMIZATION LAYER")
-print("=" * 80)
-print("Forcing CPU-only training to prevent out-of-memory errors...")
-
-# Disable GPU backends
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "0"
-os.environ["PYTORCH_MPS_ALLOCATOR"] = "0"
-
-# Override torch backend checks
-original_cuda_is_available = torch.cuda.is_available
-original_mps_is_available = torch.backends.mps.is_available if hasattr(torch.backends, "mps") else (lambda: False)
-torch.cuda.is_available = lambda: False
-if hasattr(torch.backends, "mps"):
-    torch.backends.mps.is_available = lambda: False
-
-print("✓ CUDA disabled")
-print("✓ MPS disabled (Apple Silicon GPU)")
-print("✓ All training will use CPU only")
-print("=" * 80 + "\n")
+from datasets import Dataset
 
 # ============================================================================
-# GLOBAL CONFIGURATION
+# CONFIGURATION
 # ============================================================================
 
-DATA_FILE = "data/weird_machine_gadgets.jsonl"
-OUTPUT_BASE_DIR = "checkpoints"
+# Dataset sizing
+TOTAL_EXAMPLES_TO_USE = 100
+EVAL_SPLIT = 0.1
 
-# Training hyperparameters (shared across models)
+# Training hyperparameters
 TRAIN_BATCH_SIZE = 1
 EVAL_BATCH_SIZE = 1
 GRADIENT_ACCUMULATION_STEPS = 4
@@ -96,541 +46,683 @@ NUM_EPOCHS = 3
 MAX_INPUT_LENGTH = 512
 MAX_TARGET_LENGTH = 256
 
-# Dataset sizing
-TOTAL_EXAMPLES_TO_USE = 100
-EVAL_SPLIT = 0.1
-
-# Model configurations - 2 models for memory efficiency
+# Model definitions
 MODELS = {
     "flan-t5-small": {
         "name": "google/flan-t5-small",
         "type": "seq2seq",
         "params": "77M",
-        "description": "Encoder-decoder, instruction-tuned T5",
+        "description": "Encoder-decoder, instruction-tuned",
         "architecture": "Bidirectional encoder + autoregressive decoder",
     },
     "distilgpt2": {
         "name": "distilgpt2",
         "type": "causal",
         "params": "82M",
-        "description": "Distilled GPT-2, fast and memory-efficient",
+        "description": "Decoder-only, distilled from GPT-2",
         "architecture": "Decoder-only, left-to-right attention",
     },
 }
 
 # ============================================================================
-# PLATFORM-SPECIFIC SETUP
+# DEVICE SETUP
 # ============================================================================
 
-def setup_platform(platform: str) -> int:
-    """Configure environment for Windows or Unix."""
-    print("\n" + "=" * 80)
-    print("PLATFORM SETUP")
-    print("=" * 80)
+def setup_device(force_cpu: bool = False) -> Tuple[torch.device, str]:
+    """
+    Auto-detect best available device for training.
 
-    if platform == "windows":
+    Priority:
+    1. CUDA GPU (NVIDIA)
+    2. MPS (Apple Silicon GPU) - if not forcing CPU
+    3. CPU (fallback)
+
+    Args:
+        force_cpu: If True, use CPU even if GPU is available
+
+    Returns:
+        (device, device_name)
+    """
+    if force_cpu:
+        print("\n" + "="*80)
+        print("DEVICE SETUP (CPU FORCED)")
+        print("="*80)
+        print("  Force CPU mode enabled")
+        print("  All training will use CPU only")
+        print("="*80 + "\n")
+        return torch.device("cpu"), "CPU (forced)"
+
+    print("\n" + "="*80)
+    print("DEVICE SETUP (AUTO-DETECT)")
+    print("="*80)
+
+    # Check for CUDA (NVIDIA GPU)
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        device_name = f"CUDA GPU ({torch.cuda.get_device_name(0)})"
+        print(f"✓ CUDA GPU detected: {torch.cuda.get_device_name(0)}")
+        print(f"  VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+        print("  Using GPU for training")
+    # Check for MPS (Apple Silicon)
+    elif torch.backends.mps.is_available():
+        try:
+            device = torch.device("mps")
+            device_name = "MPS (Apple Silicon GPU)"
+            print("✓ Apple Silicon GPU detected (MPS)")
+            print("  Using MPS for training")
+            print("  Note: If you encounter memory errors, run with --force_cpu")
+        except Exception as e:
+            print(f"⚠ MPS available but failed to initialize: {e}")
+            print("  Falling back to CPU")
+            device = torch.device("cpu")
+            device_name = "CPU (MPS failed)"
+    # Fallback to CPU
+    else:
+        device = torch.device("cpu")
+        device_name = "CPU"
+        print("✓ No GPU detected")
+        print("  Using CPU for training")
+        print("  Training will be slower but will work on any hardware")
+
+    print("="*80 + "\n")
+    return device, device_name
+
+
+def setup_platform(platform_arg: str) -> Dict[str, any]:
+    """Configure platform-specific settings."""
+    print("="*80)
+    print("PLATFORM SETUP")
+    print("="*80)
+
+    system = platform.system()
+    print(f"✓ Detected OS: {system}")
+    print(f"✓ Python version: {sys.version.split()[0]}")
+    print(f"✓ PyTorch version: {torch.__version__}")
+
+    # Determine multiprocessing settings
+    if platform_arg == "windows" or system == "Windows":
         print("✓ Platform: Windows")
-        print("  - Multiprocessing: Disabled to avoid spawn issues")
-        max_processes = 0  # Disable multiprocessing on Windows
+        print("  - Multiprocessing: Disabled (to avoid spawn issues)")
+        dataloader_num_workers = 0
+        use_multiprocessing = False
     else:
         print("✓ Platform: Unix (macOS/Linux)")
         print("  - Multiprocessing: Enabled")
-        max_processes = 2
-        print(f"✓ CPU cores available: {os.cpu_count()}")
-        print(f"✓ Data loading processes: {max_processes}")
+        cpu_count = os.cpu_count() or 1
+        print(f"✓ CPU cores available: {cpu_count}")
+        dataloader_num_workers = min(2, cpu_count)
+        print(f"✓ Data loading processes: {dataloader_num_workers}")
+        use_multiprocessing = True
 
-    print(f"✓ PyTorch version: {torch.__version__}")
-    print("✓ Device: CPU (forced)")
-    return max_processes
+    print("="*80 + "\n")
 
-# ============================================================================
-# MEMORY MANAGEMENT UTILITIES
-# ============================================================================
+    return {
+        "dataloader_num_workers": dataloader_num_workers,
+        "use_multiprocessing": use_multiprocessing,
+        "system": system,
+    }
 
-def free_memory():
-    """Aggressively free memory between model runs."""
-    gc.collect()
-    if original_cuda_is_available():
-        torch.cuda.empty_cache()
-    print("  ✓ Memory freed")
 
 # ============================================================================
-# DATA PREPARATION
+# DATA LOADING
 # ============================================================================
 
-def make_prompt(example):
-    """Create prompt from instruction and input."""
-    example["prompt"] = (
-        f"Task: {example['instruction']}\n\n"
-        f"Excerpt:\n{example['input']}\n\n"
-        f"Answer:"
-    )
-    return example
-
-def make_causal_prompt(example):
-    """Create prompt for causal LM (includes output for training)."""
-    example["text"] = (
-        f"Task: {example['instruction']}\n\n"
-        f"Excerpt:\n{example['input']}\n\n"
-        f"Answer: {example['output']}"
-    )
-    return example
-
-def load_and_prepare_data(max_processes: int):
-    """Load JSONL and prepare train/val splits."""
-    print("\n" + "=" * 80)
+def load_and_prepare_data(data_path: str = "data/weird_machine_gadgets.jsonl") -> Tuple[Dataset, Dataset]:
+    """Load and prepare training/validation data."""
+    print("="*80)
     print("LOADING AND PREPARING DATA")
-    print("=" * 80)
+    print("="*80)
 
-    if not Path(DATA_FILE).exists():
-        raise FileNotFoundError(f"Dataset not found: {DATA_FILE}")
-    print(f"✓ Found {DATA_FILE}")
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Data file not found: {data_path}")
 
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        line_count = sum(1 for _ in f)
-    print(f"✓ Total lines: {line_count}")
+    print(f"✓ Found {data_path}")
 
-    # Load dataset
-    dataset = load_dataset("json", data_files=DATA_FILE, split="train")
-    print(f"✓ Loaded {len(dataset)} examples")
+    # Load JSONL
+    examples = []
+    with open(data_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                examples.append(json.loads(line))
 
-    # Add prompts
-    if max_processes > 0:
-        dataset = dataset.map(make_prompt, num_proc=max_processes)
-        dataset = dataset.map(make_causal_prompt, num_proc=max_processes)
-    else:
-        dataset = dataset.map(make_prompt)
-        dataset = dataset.map(make_causal_prompt)
+    print(f"✓ Total lines: {len(examples)}")
 
     # Subsample
-    dataset = dataset.shuffle(seed=42).select(
-        range(min(TOTAL_EXAMPLES_TO_USE, len(dataset)))
-    )
-    print(f"✓ Subsampled to {len(dataset)} examples")
+    if len(examples) > TOTAL_EXAMPLES_TO_USE:
+        examples = examples[:TOTAL_EXAMPLES_TO_USE]
+        print(f"✓ Subsampled to {len(examples)} examples")
+    else:
+        print(f"✓ Using all {len(examples)} examples")
 
-    # Split
-    split = dataset.train_test_split(test_size=EVAL_SPLIT, seed=42)
-    train_ds = split["train"]
-    val_ds = split["test"]
-    print(f"✓ Train: {len(train_ds)} | Validation: {len(val_ds)}")
+    # Add prompts
+    for ex in examples:
+        instruction = ex.get("instruction", "")
+        input_text = ex.get("input", "")
+        output_text = ex.get("output", "")
 
-    return train_ds, val_ds
+        # Seq2seq prompt (for T5)
+        ex["seq2seq_prompt"] = f"Task: {instruction}\n\nExcerpt:\n{input_text}\n\nAnswer:"
+
+        # Causal prompt (for GPT-2)
+        ex["causal_prompt"] = f"Task: {instruction}\n\nExcerpt:\n{input_text}\n\nAnswer: {output_text}"
+
+    # Split train/val
+    split_idx = int(len(examples) * (1 - EVAL_SPLIT))
+    train_examples = examples[:split_idx]
+    val_examples = examples[split_idx:]
+
+    print(f"✓ Train: {len(train_examples)} | Validation: {len(val_examples)}")
+    print("="*80 + "\n")
+
+    # Convert to HF Dataset
+    train_dataset = Dataset.from_list(train_examples)
+    val_dataset = Dataset.from_list(val_examples)
+
+    return train_dataset, val_dataset
+
 
 # ============================================================================
-# MODEL-SPECIFIC TRAINING
+# MODEL TRAINING
 # ============================================================================
 
-def train_seq2seq_model(model_key: str, model_config: Dict, train_ds, val_ds, max_processes: int):
-    """Train a sequence-to-sequence model (FLAN-T5)."""
-    print("\n" + "=" * 80)
+def train_seq2seq_model(
+    model_key: str,
+    model_config: Dict,
+    train_dataset: Dataset,
+    val_dataset: Dataset,
+    platform_config: Dict,
+    device: torch.device,
+) -> None:
+    """Train seq2seq model (FLAN-T5)."""
+    print("="*80)
     print(f"TRAINING MODEL: {model_key.upper()}")
-    print("=" * 80)
-
-    model_name = model_config["name"]
-    output_dir = os.path.join(OUTPUT_BASE_DIR, model_key)
-
-    print(f"  Model: {model_name}")
+    print("="*80)
+    print(f"  Model: {model_config['name']}")
     print(f"  Type: {model_config['type']}")
     print(f"  Params: {model_config['params']}")
     print(f"  Architecture: {model_config['architecture']}")
 
     # Load model and tokenizer
+    model_name = model_config["name"]
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
-    # Force CPU
-    model.to("cpu")
-    print(f"✓ Model loaded: {type(model).__name__}")
+    print(f"✓ Model loaded: {model.__class__.__name__}")
     print(f"  Parameters: {model.num_parameters():,}")
 
     # Tokenize
-    def preprocess(examples):
+    def tokenize_seq2seq(examples):
         model_inputs = tokenizer(
-            examples["prompt"],
+            examples["seq2seq_prompt"],
             max_length=MAX_INPUT_LENGTH,
             truncation=True,
             padding=False,
         )
-        with tokenizer.as_target_tokenizer():
-            labels = tokenizer(
-                examples["output"],
-                max_length=MAX_TARGET_LENGTH,
-                truncation=True,
-                padding=False,
-            )["input_ids"]
-        model_inputs["labels"] = labels
+        labels = tokenizer(
+            examples["output"],
+            max_length=MAX_TARGET_LENGTH,
+            truncation=True,
+            padding=False,
+        )
+        model_inputs["labels"] = labels["input_ids"]
         return model_inputs
 
     print("  Tokenizing datasets...")
-    if max_processes > 0:
-        tokenized_train = train_ds.map(
-            preprocess,
-            batched=True,
-            remove_columns=train_ds.column_names,
-            num_proc=max_processes,
-        )
-        tokenized_val = val_ds.map(
-            preprocess,
-            batched=True,
-            remove_columns=val_ds.column_names,
-            num_proc=max_processes,
-        )
-    else:
-        tokenized_train = train_ds.map(
-            preprocess,
-            batched=True,
-            remove_columns=train_ds.column_names,
-        )
-        tokenized_val = val_ds.map(
-            preprocess,
-            batched=True,
-            remove_columns=val_ds.column_names,
-        )
+    train_tokenized = train_dataset.map(
+        tokenize_seq2seq,
+        batched=True,
+        remove_columns=train_dataset.column_names,
+        num_proc=platform_config["dataloader_num_workers"] if platform_config["use_multiprocessing"] else 1,
+    )
+    val_tokenized = val_dataset.map(
+        tokenize_seq2seq,
+        batched=True,
+        remove_columns=val_dataset.column_names,
+        num_proc=platform_config["dataloader_num_workers"] if platform_config["use_multiprocessing"] else 1,
+    )
 
-    # Training args - CPU optimized
+    # Training args
+    output_dir = f"checkpoints/{model_key}"
     training_args = Seq2SeqTrainingArguments(
         output_dir=output_dir,
+        num_train_epochs=NUM_EPOCHS,
         per_device_train_batch_size=TRAIN_BATCH_SIZE,
         per_device_eval_batch_size=EVAL_BATCH_SIZE,
         gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
         learning_rate=LEARNING_RATE,
-        num_train_epochs=NUM_EPOCHS,
-        eval_strategy="steps",
-        eval_steps=50,
-        save_strategy="steps",
-        save_steps=50,
-        save_total_limit=1,
-        logging_steps=10,
-        predict_with_generate=True,
-        fp16=False,
-        use_cpu=True,  # Explicitly force CPU
-        dataloader_num_workers=0,
-        report_to=[],
-        seed=42,
-        do_train=True,
-        do_eval=True,
+        logging_steps=max(1, len(train_tokenized) // (TRAIN_BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS) // 4),
+        save_strategy="no",
+        eval_strategy="no",
+        predict_with_generate=False,
+        dataloader_num_workers=platform_config["dataloader_num_workers"],
+        remove_unused_columns=True,
+        no_cuda=(device.type != "cuda"),  # Disable CUDA if not using CUDA device
     )
 
     # Data collator
-    data_collator = DataCollatorForSeq2Seq(tokenizer, model=model, padding=True)
+    data_collator = DataCollatorForSeq2Seq(
+        tokenizer=tokenizer,
+        model=model,
+        padding=True,
+    )
 
     # Trainer
     trainer = Seq2SeqTrainer(
         model=model,
         args=training_args,
-        train_dataset=tokenized_train,
-        eval_dataset=tokenized_val,
-        tokenizer=tokenizer,
+        train_dataset=train_tokenized,
+        eval_dataset=val_tokenized,
         data_collator=data_collator,
     )
 
+    # Train
     print("  Training...")
-    train_result = trainer.train()
-    print(f"✓ Training complete! Loss: {train_result.training_loss:.4f}")
+    trainer.train()
 
     # Save
-    final_model_path = os.path.join(output_dir, "final_model")
-    model.save_pretrained(final_model_path)
-    tokenizer.save_pretrained(final_model_path)
-    print(f"✓ Saved to: {final_model_path}")
+    final_model_dir = f"{output_dir}/final_model"
+    trainer.save_model(final_model_dir)
+    tokenizer.save_pretrained(final_model_dir)
 
-    return final_model_path, tokenizer, model
+    print(f"✓ Training complete! Loss: {trainer.state.log_history[-1].get('train_loss', 'N/A')}")
+    print(f"✓ Saved to: {final_model_dir}")
+    print("="*80 + "\n")
 
-def train_causal_model(model_key: str, model_config: Dict, train_ds, val_ds, max_processes: int):
-    """Train a causal language model (DistilGPT2)."""
-    print("\n" + "=" * 80)
+
+def train_causal_model(
+    model_key: str,
+    model_config: Dict,
+    train_dataset: Dataset,
+    val_dataset: Dataset,
+    platform_config: Dict,
+    device: torch.device,
+) -> None:
+    """Train causal LM model (DistilGPT2)."""
+    print("="*80)
     print(f"TRAINING MODEL: {model_key.upper()}")
-    print("=" * 80)
-
-    model_name = model_config["name"]
-    output_dir = os.path.join(OUTPUT_BASE_DIR, model_key)
-
-    print(f"  Model: {model_name}")
-    print(f"  Type: {model_config['type']} (causal LM)")
+    print("="*80)
+    print(f"  Model: {model_config['name']}")
+    print(f"  Type: {model_config['type']}")
     print(f"  Params: {model_config['params']}")
     print(f"  Architecture: {model_config['architecture']}")
 
-    # Load
+    # Load model and tokenizer
+    model_name = model_config["name"]
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(model_name)
 
-    # Force CPU
-    model.to("cpu")
-
-    # Set pad token if missing
+    # Set pad token
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model.config.pad_token_id = tokenizer.eos_token_id
+        model.config.pad_token_id = tokenizer.eos_token_id
 
-    print(f"✓ Model loaded: {type(model).__name__}")
+    print(f"✓ Model loaded: {model.__class__.__name__}")
     print(f"  Parameters: {model.num_parameters():,}")
 
     # Tokenize
-    def preprocess(examples):
+    def tokenize_causal(examples):
         return tokenizer(
-            examples["text"],
+            examples["causal_prompt"],
             max_length=MAX_INPUT_LENGTH + MAX_TARGET_LENGTH,
             truncation=True,
             padding=False,
         )
 
     print("  Tokenizing datasets...")
-    if max_processes > 0:
-        tokenized_train = train_ds.map(
-            preprocess,
-            batched=True,
-            remove_columns=train_ds.column_names,
-            num_proc=max_processes,
-        )
-        tokenized_val = val_ds.map(
-            preprocess,
-            batched=True,
-            remove_columns=val_ds.column_names,
-            num_proc=max_processes,
-        )
-    else:
-        tokenized_train = train_ds.map(
-            preprocess,
-            batched=True,
-            remove_columns=train_ds.column_names,
-        )
-        tokenized_val = val_ds.map(
-            preprocess,
-            batched=True,
-            remove_columns=val_ds.column_names,
-        )
+    train_tokenized = train_dataset.map(
+        tokenize_causal,
+        batched=True,
+        remove_columns=train_dataset.column_names,
+        num_proc=platform_config["dataloader_num_workers"] if platform_config["use_multiprocessing"] else 1,
+    )
+    val_tokenized = val_dataset.map(
+        tokenize_causal,
+        batched=True,
+        remove_columns=val_dataset.column_names,
+        num_proc=platform_config["dataloader_num_workers"] if platform_config["use_multiprocessing"] else 1,
+    )
 
-    # Training args - CPU optimized
+    # Training args
+    output_dir = f"checkpoints/{model_key}"
     training_args = TrainingArguments(
         output_dir=output_dir,
+        num_train_epochs=NUM_EPOCHS,
         per_device_train_batch_size=TRAIN_BATCH_SIZE,
         per_device_eval_batch_size=EVAL_BATCH_SIZE,
         gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
         learning_rate=LEARNING_RATE,
-        num_train_epochs=NUM_EPOCHS,
-        eval_strategy="steps",
-        eval_steps=50,
-        save_strategy="steps",
-        save_steps=50,
-        save_total_limit=1,
-        logging_steps=10,
-        fp16=False,
-        use_cpu=True,  # Explicitly force CPU
-        dataloader_num_workers=0,
-        report_to=[],
-        seed=42,
+        logging_steps=max(1, len(train_tokenized) // (TRAIN_BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS) // 4),
+        save_strategy="no",
+        eval_strategy="no",
+        dataloader_num_workers=platform_config["dataloader_num_workers"],
+        remove_unused_columns=True,
+        no_cuda=(device.type != "cuda"),
     )
 
-    # Data collator for causal LM
+    # Data collator
     data_collator = DataCollatorForLanguageModeling(
-        tokenizer,
-        mlm=False,  # Causal LM, not masked LM
+        tokenizer=tokenizer,
+        mlm=False,
     )
 
     # Trainer
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=tokenized_train,
-        eval_dataset=tokenized_val,
-        tokenizer=tokenizer,
+        train_dataset=train_tokenized,
+        eval_dataset=val_tokenized,
         data_collator=data_collator,
     )
 
+    # Train
     print("  Training...")
-    train_result = trainer.train()
-    print(f"✓ Training complete! Loss: {train_result.training_loss:.4f}")
+    trainer.train()
 
     # Save
-    final_model_path = os.path.join(output_dir, "final_model")
-    model.save_pretrained(final_model_path)
-    tokenizer.save_pretrained(final_model_path)
-    print(f"✓ Saved to: {final_model_path}")
+    final_model_dir = f"{output_dir}/final_model"
+    trainer.save_model(final_model_dir)
+    tokenizer.save_pretrained(final_model_dir)
 
-    return final_model_path, tokenizer, model
+    print(f"✓ Training complete! Loss: {trainer.state.log_history[-1].get('train_loss', 'N/A')}")
+    print(f"✓ Saved to: {final_model_dir}")
+    print("="*80 + "\n")
+
+
+def cleanup_memory(model_name: str) -> None:
+    """Free memory after training a model."""
+    print(f"  Cleaning up memory after {model_name}...")
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    print("  ✓ Memory freed\n")
+
 
 # ============================================================================
-# INFERENCE & STRING-LEVEL AGREEMENT
+# ENSEMBLE COMPARISON
 # ============================================================================
-
-def generate_seq2seq(model, tokenizer, prompt: str, max_new_tokens: int = 256) -> str:
-    """Generate from seq2seq model."""
-    inputs = tokenizer(prompt, return_tensors="pt").to("cpu")
-    model.to("cpu")
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=False,
-            num_beams=1,
-        )
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-def generate_causal(model, tokenizer, prompt: str, max_new_tokens: int = 256) -> str:
-    """Generate from causal LM (extract answer portion only)."""
-    inputs = tokenizer(prompt, return_tensors="pt").to("cpu")
-    model.to("cpu")
-    with torch.no_grad():
-        outputs = model.generate(
-            inputs["input_ids"],  # tensor directly
-            attention_mask=inputs.get("attention_mask"),
-            max_new_tokens=max_new_tokens,
-            do_sample=False,
-            pad_token_id=tokenizer.eos_token_id,
-        )
-    full_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    # Extract answer (everything after "Answer:")
-    if "Answer:" in full_text:
-        answer = full_text.split("Answer:")[-1].strip()
-    else:
-        answer = full_text
-    return answer
-
-def check_format(output: str) -> Dict[str, bool]:
-    """Check if output has correct format."""
-    lower = output.lower()
-    return {
-        "gadget_type": "gadget_type:" in lower,
-        "location": "location:" in lower,
-        "explanation": "explanation:" in lower,
-    }
-
-def extract_gadget_type(prediction: str) -> str:
-    """Extract gadget type from prediction."""
-    if not prediction:
-        return "UNKNOWN"
-    lower = prediction.lower()
-    if "gadget_type:" in lower:
-        start = lower.index("gadget_type:") + len("gadget_type:")
-        rest = prediction[start:].split(";")[0].split("\n")[0].strip()
-        return rest if rest else "UNKNOWN"
-    return "UNKNOWN"
 
 def normalize_gadget_type(gadget_type: str) -> str:
-    """
-    Normalize gadget type for comparison:
-    - lowercase
-    - remove 'gadget'/'gadgets'
-    - remove spaces, hyphens, underscores, slashes
-    - remove 'and'
-    """
-    if not gadget_type or gadget_type == "UNKNOWN":
-        return "UNKNOWN"
+    """Normalize gadget type for comparison."""
+    if not gadget_type:
+        return ""
+
     normalized = gadget_type.lower()
-    normalized = normalized.replace(" gadget", "").replace(" gadgets", "")
-    normalized = normalized.replace(" ", "").replace("-", "").replace("_", "").replace("/", "")
+    normalized = normalized.replace("gadget", "").replace("gadgets", "")
+    normalized = re.sub(r"[\s\-_/]+", "", normalized)
     normalized = normalized.replace("and", "")
+
     return normalized.strip()
 
+
+def extract_gadget_type(text: str) -> str:
+    """Extract gadget_type from model output."""
+    match = re.search(r"gadget_type:\s*([^;\n]+)", text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def check_output_format(text: str) -> Dict[str, bool]:
+    """Check if output contains required fields."""
+    return {
+        "gadget_type": bool(re.search(r"gadget_type:", text, re.IGNORECASE)),
+        "location": bool(re.search(r"location:", text, re.IGNORECASE)),
+        "explanation": bool(re.search(r"explanation:", text, re.IGNORECASE)),
+    }
+
+
+def generate_prediction(model, tokenizer, prompt: str, model_type: str, device: torch.device, max_new_tokens: int = 256) -> str:
+    """Generate prediction from a model."""
+    inputs = tokenizer(prompt, return_tensors="pt", max_length=MAX_INPUT_LENGTH, truncation=True)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        if model_type == "seq2seq":
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                num_beams=1,
+            )
+        else:  # causal
+            outputs = model.generate(
+                inputs["input_ids"],
+                attention_mask=inputs.get("attention_mask"),
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                num_beams=1,
+                pad_token_id=tokenizer.eos_token_id,
+            )
+
+    prediction = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return prediction
+
+
 def compute_agreement(predictions: Dict[str, str]) -> Dict:
-    """Compute inter-model agreement metrics with normalization."""
-    # Raw gadget types
-    raw_gadget_types = {k: extract_gadget_type(v) for k, v in predictions.items()}
-    # Normalized for comparison
-    normalized_types = {k: normalize_gadget_type(v) for k, v in raw_gadget_types.items()}
+    """Compute agreement metrics across model predictions."""
+    # Extract gadget types
+    gadget_types = {}
+    normalized_types = {}
 
-    unique_raw = set(raw_gadget_types.values())
-    unique_normalized = set(normalized_types.values())
+    for model_key, pred_text in predictions.items():
+        raw_type = extract_gadget_type(pred_text)
+        gadget_types[model_key] = raw_type
+        normalized_types[model_key] = normalize_gadget_type(raw_type)
 
-    # String-level agreement = all normalized types equal
-    full_agreement = len(unique_normalized) == 1
+    # Check agreement
+    unique_normalized = list(set(normalized_types.values()))
+    full_agreement = len(unique_normalized) == 1 and unique_normalized[0] != ""
 
-    # Count normalized types for majority
-    type_counts = Counter(normalized_types.values())
-    majority_normalized, majority_count = type_counts.most_common(1)[0]
-
-    # Representative raw type for majority
-    majority_raw = None
-    for k, v in normalized_types.items():
-        if v == majority_normalized:
-            majority_raw = raw_gadget_types[k]
-            break
-    if majority_raw is None:
-        majority_raw = majority_normalized
+    # Majority type
+    norm_counts = Counter(normalized_types.values())
+    if norm_counts:
+        majority_norm, majority_count = norm_counts.most_common(1)[0]
+        # Find a representative raw label for this normalized type
+        majority_type = next(
+            (raw for model_key, raw in gadget_types.items() 
+             if normalize_gadget_type(raw) == majority_norm),
+            majority_norm
+        )
+    else:
+        majority_type = ""
+        majority_count = 0
 
     return {
         "full_agreement": full_agreement,
-        "gadget_types": raw_gadget_types,
-        "unique_types": list(unique_raw),
+        "gadget_types": gadget_types,
+        "unique_types": list(set(gadget_types.values())),
         "normalized_types": normalized_types,
-        "unique_normalized_types": list(unique_normalized),
-        "majority_type": majority_raw,
+        "unique_normalized_types": unique_normalized,
+        "majority_type": majority_type,
         "majority_count": majority_count,
         "total_models": len(predictions),
     }
 
-def run_ensemble_comparison(models_info: Dict, val_ds):
-    """Run all models on validation set and analyze string-level agreement."""
-    print("\n" + "=" * 80)
+
+def run_ensemble_comparison(
+    val_dataset: Dataset,
+    models_info: Dict,
+    device: torch.device,
+    use_judge: bool = False,
+) -> Dict:
+    """Run ensemble comparison on validation set."""
+    print("="*80)
     print("ENSEMBLE COMPARISON & AGREEMENT ANALYSIS (STRING-LEVEL)")
-    print("=" * 80)
+    print("="*80 + "\n")
 
+    # Load all trained models
+    loaded_models = {}
+    for model_key, model_config in MODELS.items():
+        checkpoint_dir = f"checkpoints/{model_key}/final_model"
+        if not os.path.exists(checkpoint_dir):
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_dir}")
+
+        print(f"Loading {model_key}...")
+        tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir)
+
+        if model_config["type"] == "seq2seq":
+            model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint_dir)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(checkpoint_dir)
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+
+        model.to(device)
+        model.eval()
+
+        loaded_models[model_key] = {
+            "model": model,
+            "tokenizer": tokenizer,
+            "type": model_config["type"],
+        }
+
+    print(f"✓ Loaded {len(loaded_models)} models\n")
+
+    # Run comparison
     results = []
+    for idx, example in enumerate(val_dataset):
+        print("="*80)
+        print(f"VALIDATION EXAMPLE {idx+1}/{len(val_dataset)}")
+        print("="*80 + "\n")
 
-    for i, example in enumerate(val_ds):
-        print(f"\n{'='*80}")
-        print(f"VALIDATION EXAMPLE {i+1}/{len(val_ds)}")
-        print(f"{'='*80}")
+        instruction = example.get("instruction", "")
+        input_text = example.get("input", "")
+        gold_output = example.get("output", "")
 
-        instruction = example["instruction"]
-        excerpt = example["input"]
-        gold_output = example["output"]
-        prompt = example["prompt"]
+        print(f"INSTRUCTION: {instruction[:80]}...")
+        print(f"EXCERPT: {input_text[:80]}...\n")
 
-        print(f"\nINSTRUCTION: {instruction[:80]}...")
-        print(f"EXCERPT: {excerpt[:100]}...")
-
+        # Generate predictions
         predictions = {}
         format_checks = {}
 
-        # Get predictions from each model
-        for model_key, info in models_info.items():
-            print(f"\n  [{model_key}] Generating...")
-            if info["type"] == "seq2seq":
-                pred = generate_seq2seq(info["model"], info["tokenizer"], prompt)
+        for model_key, model_info in loaded_models.items():
+            print(f"  [{model_key}] Generating...")
+
+            if model_info["type"] == "seq2seq":
+                prompt = example["seq2seq_prompt"]
             else:
-                pred = generate_causal(info["model"], info["tokenizer"], prompt)
+                # For causal models, use only the instruction part (not the answer)
+                prompt = f"Task: {instruction}\n\nExcerpt:\n{input_text}\n\nAnswer:"
+
+            pred = generate_prediction(
+                model_info["model"],
+                model_info["tokenizer"],
+                prompt,
+                model_info["type"],
+                device,
+            )
+
             predictions[model_key] = pred
-            format_checks[model_key] = check_format(pred)
-            print(f"  Output: {pred[:120]}...")
+            format_checks[model_key] = check_output_format(pred)
+
+            print(f"  Output: {pred[:80]}...\n")
 
         # Compute agreement
         agreement = compute_agreement(predictions)
 
-        print(f"\n{'─'*80}")
+        # Display analysis
+        print("─"*80)
         print("AGREEMENT ANALYSIS (STRING-LEVEL):")
-        print(f"{'─'*80}")
+        print("─"*80)
         print(f"  Full agreement (normalized): {'✓ YES' if agreement['full_agreement'] else '✗ NO'}")
         print(f"  Unique raw gadget types: {agreement['unique_types']}")
         print(f"  Unique normalized types: {agreement['unique_normalized_types']}")
         print(f"  Majority type: {agreement['majority_type']} ({agreement['majority_count']}/{agreement['total_models']})")
-
         print(f"\n  Model-specific gadget types:")
-        for model_key, gtype in agreement["gadget_types"].items():
+        for model_key, gtype in agreement['gadget_types'].items():
             print(f"    - {model_key}: {gtype}")
-
         print(f"\n  Format checks:")
         for model_key, checks in format_checks.items():
-            all_pass = all(checks.values())
-            status = "✓" if all_pass else "✗"
+            status = "✓" if all(checks.values()) else "✗"
             print(f"    {status} {model_key}: {checks}")
+        print("\n")
 
-        # Store results
         results.append({
-            "example_id": i,
+            "example_id": idx,
             "instruction": instruction,
-            "excerpt": excerpt,
+            "excerpt": input_text,
             "gold_output": gold_output,
             "predictions": predictions,
             "format_checks": format_checks,
             "agreement": agreement,
         })
 
-    return results
+    # Compute summary statistics
+    total = len(results)
+    full_agreements = sum(1 for r in results if r["agreement"]["full_agreement"])
 
-# ============================================================================
-# LIGHTWEIGHT REASONING LLM JUDGE (Phi-3-mini-4k-instruct, 4-bit quantized)
-# ============================================================================
+    format_accuracy = {}
+    for model_key in MODELS.keys():
+        correct_format = sum(
+            1 for r in results
+            if all(r["format_checks"][model_key].values())
+        )
+        format_accuracy[model_key] = correct_format / total if total > 0 else 0
+
+    summary = {
+        "total_examples": total,
+        "full_agreements": full_agreements,
+        "full_agreement_rate": full_agreements / total if total > 0 else 0,
+        "disagreement_rate": (total - full_agreements) / total if total > 0 else 0,
+        "model_format_accuracy": format_accuracy,
+        "llm_judge_used": use_judge,
+    }
+
+    # Optionally run LLM judge (placeholder for now)
+    if use_judge:
+        print("\n" + "="*80)
+        print("SEMANTIC JUDGMENT PHASE (LIGHTWEIGHT LLM)")
+        print("="*80)
+        disagreements = [r for r in results if not r["agreement"]["full_agreement"]]
+        print(f"  String-level disagreements: {len(disagreements)}/{total}\n")
+
+        if len(disagreements) > 0:
+            print("  Loading Phi-2 reasoning judge...\n")
+            from transformers import AutoModelForCausalLM as CausalLM
+
+            judge = LightweightSemanticJudge()
+
+            print(f"  Judging {len(disagreements)} disagreements...")
+            for i, result in enumerate(disagreements):
+                print(f"  [{i+1}/{len(disagreements)}] Judging example {result['example_id']}...", end=" ")
+
+                model_keys = list(result["predictions"].keys())
+                pred_a = result["predictions"][model_keys[0]]
+                pred_b = result["predictions"][model_keys[1]]
+                gold = result["gold_output"]
+
+                judgment = judge.judge(pred_a, pred_b, gold)
+                result["agreement"]["llm_judgment"] = judgment
+
+                # Update semantic agreement
+                if judgment["verdict"] in ["FULL_AGREEMENT", "PARTIAL_AGREEMENT"]:
+                    result["agreement"]["semantic_agreement"] = True
+                else:
+                    result["agreement"]["semantic_agreement"] = False
+
+                print(judgment["verdict"])
+
+            # Update summary with semantic agreement stats
+            semantic_agreements = sum(
+                1 for r in results 
+                if r["agreement"].get("semantic_agreement", r["agreement"]["full_agreement"])
+            )
+            summary["semantic_agreements"] = semantic_agreements
+            summary["semantic_agreement_rate"] = semantic_agreements / total if total > 0 else 0
+
+            print("\n" + "="*80)
+            print("AGREEMENT SUMMARY (WITH LLM JUDGE)")
+            print("="*80)
+            print(f"  Total examples: {total}")
+            print(f"  String-level agreement: {full_agreements} ({summary['full_agreement_rate']*100:.1f}%)")
+            print(f"  Semantic agreement (with LLM): {semantic_agreements} ({summary['semantic_agreement_rate']*100:.1f}%)")
+            if semantic_agreements > full_agreements:
+                print(f"  Improvement: +{semantic_agreements - full_agreements} examples")
+            print("="*80 + "\n")
+
+    return {"summary": summary, "results": results}
+
 
 # ============================================================================
 # LIGHTWEIGHT REASONING LLM JUDGE (Phi-2, CPU-friendly)
@@ -639,40 +731,58 @@ def run_ensemble_comparison(models_info: Dict, val_ds):
 class LightweightSemanticJudge:
     """
     Lightweight reasoning LLM for judging semantic agreement between model predictions.
-    Uses microsoft/phi-2 (~2.7B params) on CPU without quantization (~5 GB).
+    Uses microsoft/phi-2 (~2.7B params) on available device without quantization.
     """
 
-    def __init__(self, model_name: str = "microsoft/phi-2"):
-        print("\n" + "=" * 80)
+    def __init__(self, model_name: str = "microsoft/phi-2", device: Optional[torch.device] = None):
+        print("=" * 80)
         print("LOADING LIGHTWEIGHT REASONING JUDGE")
         print("=" * 80)
         print(f"  Model: {model_name}")
-        print("  Model size: ~2.7B parameters")
-        print("  Quantization: None (16-bit weights on CPU)")
-        print("  Expected memory: ~5 GB")
-        print("  Device: CPU")
+        print(f"  Model size: ~2.7B parameters")
+        print(f"  Quantization: None")
 
-        # Load Phi-2 on CPU. Use float16 to reduce memory footprint vs float32.
-        # If you hit issues on some CPUs, change torch.float16 -> torch.float32.
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch.float32,
-            device_map="cpu",
-            trust_remote_code=True,
-            low_cpu_mem_usage=True,
-        )
+        if device is None:
+            # Auto-detect device
+            if torch.cuda.is_available():
+                device = torch.device("cuda")
+                print(f"  Device: CUDA GPU")
+            else:
+                device = torch.device("cpu")
+                print(f"  Device: CPU")
+                print(f"  Expected memory: ~5-6 GB")
+
+        self.device = device
+
+        # Load Phi-2 with appropriate dtype
+        if device.type == "cuda":
+            # Use float16 on GPU
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=torch.float16,
+                device_map="auto",
+                trust_remote_code=True,
+                low_cpu_mem_usage=True,
+            )
+        else:
+            # Use float32 on CPU (float16 not fully supported)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=torch.float32,
+                device_map="cpu",
+                trust_remote_code=True,
+                low_cpu_mem_usage=True,
+            )
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name,
             trust_remote_code=True,
         )
 
-        print("✓ Reasoning judge loaded successfully")
+        print("✓ Reasoning judge loaded successfully\n")
 
     def create_judge_prompt(self, pred_a: str, pred_b: str, gold: str) -> str:
-        """
-        Create a structured prompt for semantic agreement judgment.
-        """
+        """Create a structured prompt for semantic agreement judgment."""
         return f"""<|system|>
 You are an expert evaluator judging whether two model predictions are semantically equivalent.
 Respond with ONLY ONE WORD from: FULL_AGREEMENT, PARTIAL_AGREEMENT, DISAGREEMENT, or INVALID.
@@ -689,358 +799,121 @@ Model B prediction:
 {pred_b}
 
 Question: Are Model A and Model B semantically equivalent?
-
-Consider:
-1. Do they refer to the same gadget type category?
-2. Are spelling/capitalization the only differences?
-3. Is one garbled or repetitive?
-4. Do they differ in specificity (e.g., "BOOL tag" vs "ReadWrite gadget")?
-
-Verdict:<|end|>
+<|end|>
 <|assistant|>
 """
 
-    def judge_semantic_agreement(
-        self,
-        pred_a: str,
-        pred_b: str,
-        gold: str,
-        max_new_tokens: int = 100,
-    ) -> Dict[str, str]:
+    def judge(self, pred_a: str, pred_b: str, gold: str) -> Dict[str, str]:
         """
         Judge semantic agreement between two predictions.
 
         Returns:
-            {
-                "verdict": "FULL_AGREEMENT" | "PARTIAL_AGREEMENT" | "DISAGREEMENT" | "INVALID",
-                "explanation": "Brief explanation",
-                "raw_response": "Full model output",
-            }
+            {"verdict": str, "explanation": str}
         """
         prompt = self.create_judge_prompt(pred_a, pred_b, gold)
 
-        # Tokenize
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        inputs = self.tokenizer(prompt, return_tensors="pt", max_length=1024, truncation=True)
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-        # Generate
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=0.1,  # low temp for consistency
-                do_sample=False,  # deterministic
+                max_new_tokens=100,
+                do_sample=False,
+                temperature=1.0,
                 pad_token_id=self.tokenizer.eos_token_id,
             )
 
-        # Decode
         response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
         # Extract verdict and explanation
-        lines = response.split("\n")
-        verdict = "DISAGREEMENT"  # default
+        # Response format: "<|assistant|>\nVERDICT\nExplanation..."
+        response_parts = response.split("<|assistant|>")[-1].strip().split("\n", 1)
 
-        for line in lines:
-            line_upper = line.strip().upper()
-            if "FULL_AGREEMENT" in line_upper:
-                verdict = "FULL_AGREEMENT"
-                break
-            elif "PARTIAL_AGREEMENT" in line_upper:
-                verdict = "PARTIAL_AGREEMENT"
-                break
-            elif "DISAGREEMENT" in line_upper:
-                verdict = "DISAGREEMENT"
-                break
-            elif "INVALID" in line_upper:
-                verdict = "INVALID"
-                break
+        verdict_raw = response_parts[0].strip().upper()
+        explanation = response_parts[1].strip() if len(response_parts) > 1 else ""
 
-        explanation = ""
-        for line in lines:
-            if (
-                len(line.strip()) > 20
-                and not any(
-                    kw in line.upper()
-                    for kw in ["FULL_AGREEMENT", "PARTIAL_AGREEMENT", "DISAGREEMENT", "INVALID"]
-                )
-            ):
-                explanation = line.strip()
-                break
-        if not explanation:
-            explanation = "No explanation provided"
+        # Parse verdict
+        if "FULL_AGREEMENT" in verdict_raw or "FULL AGREEMENT" in verdict_raw:
+            verdict = "FULL_AGREEMENT"
+        elif "PARTIAL_AGREEMENT" in verdict_raw or "PARTIAL AGREEMENT" in verdict_raw:
+            verdict = "PARTIAL_AGREEMENT"
+        elif "INVALID" in verdict_raw:
+            verdict = "INVALID"
+        else:
+            verdict = "DISAGREEMENT"
 
         return {
             "verdict": verdict,
-            "explanation": explanation,
-            "raw_response": response,
+            "explanation": explanation if explanation else "No explanation provided.",
         }
 
-    def batch_judge(self, disagreements: List[Dict], verbose: bool = True) -> List[Dict]:
-        """
-        Judge all disagreements in batch.
-
-        Args:
-            disagreements: List of dicts with keys 'pred_a', 'pred_b', 'gold', 'example_id'
-
-        Returns:
-            List of judgment dicts
-        """
-        judgments = []
-        print(f"\n  Judging {len(disagreements)} disagreements...")
-
-        for i, dis in enumerate(disagreements):
-            if verbose:
-                print(
-                    f"  [{i+1}/{len(disagreements)}] Judging example {dis.get('example_id', i)}...",
-                    end=" ",
-                )
-            judgment = self.judge_semantic_agreement(
-                dis["pred_a"],
-                dis["pred_b"],
-                dis["gold"],
-            )
-            judgment["example_id"] = dis.get("example_id", i)
-            judgments.append(judgment)
-            if verbose:
-                print(f"{judgment['verdict']}")
-
-        return judgments
-
-def run_llm_judge_on_results(results: List[Dict], use_judge: bool) -> List[Dict]:
-    """
-    Optionally apply lightweight reasoning LLM judge to disagreements.
-    Adds:
-      - agreement['semantic_agreement'] (bool)
-      - agreement['llm_judgment'] (dict) for judged examples
-    """
-    # Initialize semantic_agreement to string-level full_agreement
-    for r in results:
-        r["agreement"]["semantic_agreement"] = r["agreement"]["full_agreement"]
-
-    if not use_judge:
-        print("\nLLM judge disabled (--use_judge not set).")
-        return results
-
-    # Collect disagreements
-    disagreements = []
-    for r in results:
-        if not r["agreement"]["full_agreement"]:
-            preds = r["predictions"]
-            model_keys = list(preds.keys())
-            if len(model_keys) < 2:
-                continue
-            disagreements.append({
-                "example_id": r["example_id"],
-                "pred_a": preds[model_keys[0]],
-                "pred_b": preds[model_keys[1]],
-                "gold": r["gold_output"],
-            })
-
-    if not disagreements:
-        print("\nNo string-level disagreements to judge (100% agreement).")
-        return results
-
-    print("\n" + "=" * 80)
-    print("SEMANTIC JUDGMENT PHASE (LIGHTWEIGHT LLM)")
-    print("=" * 80)
-    print(f"  String-level disagreements: {len(disagreements)}/{len(results)}")
-
-    try:
-        judge = LightweightSemanticJudge()
-        judgments = judge.batch_judge(disagreements, verbose=True)
-
-        # Map example_id → judgment
-        jmap = {j["example_id"]: j for j in judgments}
-
-        for r in results:
-            ex_id = r["example_id"]
-            if ex_id in jmap:
-                j = jmap[ex_id]
-                r["agreement"]["llm_judgment"] = {
-                    "verdict": j["verdict"],
-                    "explanation": j["explanation"],
-                }
-                if j["verdict"] in ["FULL_AGREEMENT", "PARTIAL_AGREEMENT"]:
-                    r["agreement"]["semantic_agreement"] = True
-                else:
-                    r["agreement"]["semantic_agreement"] = False
-
-        # Summary
-        string_agreements = sum(1 for r in results if r["agreement"]["full_agreement"])
-        semantic_agreements = sum(1 for r in results if r["agreement"]["semantic_agreement"])
-
-        print("\n" + "=" * 80)
-        print("AGREEMENT SUMMARY (WITH LLM JUDGE)")
-        print("=" * 80)
-        print(f"  Total examples: {len(results)}")
-        print(f"  String-level agreement: {string_agreements} ({string_agreements/len(results)*100:.1f}%)")
-        print(f"  Semantic agreement (with LLM): {semantic_agreements} ({semantic_agreements/len(results)*100:.1f}%)")
-        print(f"  Improvement: +{semantic_agreements - string_agreements} examples")
-
-        verdicts = [
-            r["agreement"].get("llm_judgment", {}).get("verdict", "N/A")
-            for r in results
-            if "llm_judgment" in r["agreement"]
-        ]
-        v_counts = Counter(verdicts)
-        print("\n  LLM Judge verdicts:")
-        for v, c in v_counts.items():
-            print(f"    - {v}: {c}")
-
-    except Exception as e:
-        print(f"  ✗ Failed to load or run LLM judge: {e}")
-        print("  Falling back to string-only agreement (semantic_agreement = full_agreement).")
-        for r in results:
-            r["agreement"]["semantic_agreement"] = r["agreement"]["full_agreement"]
-
-    return results
 
 # ============================================================================
-# REPORT SAVING
-# ============================================================================
-
-def save_comparison_report(results: List[Dict], output_path: str = "ensemble_report.json"):
-    """Save detailed comparison report."""
-    print("\n" + "=" * 80)
-    print("SAVING COMPARISON REPORT")
-    print("=" * 80)
-
-    total_examples = len(results)
-    full_agreements = sum(1 for r in results if r["agreement"]["full_agreement"])
-    semantic_agreements = sum(1 for r in results if r["agreement"].get("semantic_agreement", False))
-
-    # Model-specific format accuracy
-    model_format_accuracy = {}
-    model_keys = list(results[0]["format_checks"].keys())
-    for model_key in model_keys:
-        correct = sum(
-            1 for r in results
-            if all(r["format_checks"][model_key].values())
-        )
-        model_format_accuracy[model_key] = correct / total_examples
-
-    llm_judge_used = any("llm_judgment" in r["agreement"] for r in results)
-
-    summary = {
-        "total_examples": total_examples,
-        "full_agreements": full_agreements,
-        "full_agreement_rate": full_agreements / total_examples,
-        "semantic_agreements": semantic_agreements,
-        "semantic_agreement_rate": semantic_agreements / total_examples,
-        "disagreement_rate": 1 - (full_agreements / total_examples),
-        "model_format_accuracy": model_format_accuracy,
-        "llm_judge_used": llm_judge_used,
-    }
-
-    report = {
-        "summary": summary,
-        "results": results,
-    }
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2, ensure_ascii=False)
-
-    print(f"✓ Report saved to: {output_path}")
-    print("\nSUMMARY:")
-    print(f"  Total examples: {total_examples}")
-    print(f"  Full agreement (string-level): {full_agreements} ({summary['full_agreement_rate']*100:.1f}%)")
-    print(f"  Semantic agreement (with LLM): {semantic_agreements} ({summary['semantic_agreement_rate']*100:.1f}%)")
-    print("\n  Format accuracy by model:")
-    for model_key, accuracy in model_format_accuracy.items():
-        print(f"    - {model_key}: {accuracy*100:.1f}%")
-    print(f"\n  LLM judge used: {llm_judge_used}")
-
-# ============================================================================
-# MAIN EXECUTION
+# MAIN
 # ============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Multi-model ensemble training and comparison (memory-optimized)"
-    )
-    parser.add_argument(
-        "--platform",
-        type=str,
-        choices=["windows", "unix"],
-        default="unix",
-        help="Platform: 'windows' or 'unix' (macOS/Linux). Default: unix",
-    )
-    parser.add_argument(
-        "--skip_training",
-        action="store_true",
-        dest="skip_training",
-        help="Skip training and load existing models (for testing comparison only)",
-    )
-    parser.add_argument(
-        "--use_judge",
-        action="store_true",
-        dest="use_judge",
-        help="Use lightweight reasoning LLM judge for semantic agreement",
-    )
+    parser = argparse.ArgumentParser(description="Multi-model ensemble training")
+    parser.add_argument("--platform", choices=["unix", "windows"], default="unix",
+                       help="Platform (unix or windows)")
+    parser.add_argument("--skip_training", action="store_true",
+                       help="Skip training and load existing models")
+    parser.add_argument("--use_judge", action="store_true",
+                       help="Use Phi-2 LLM as semantic judge")
+    parser.add_argument("--force_cpu", action="store_true",
+                       help="Force CPU-only training (useful for memory-constrained systems)")
     args = parser.parse_args()
 
-    # Setup platform
-    max_processes = setup_platform(args.platform)
+    # Setup
+    device, device_name = setup_device(force_cpu=args.force_cpu)
+    platform_config = setup_platform(args.platform)
 
     # Load data
-    train_ds, val_ds = load_and_prepare_data(max_processes)
+    train_dataset, val_dataset = load_and_prepare_data()
 
-    # Train all models (or load if skip_training)
-    models_info = {}
-    for model_key, model_config in MODELS.items():
-        if args.skip_training:
-            print(f"\n⚠️  Skipping training for {model_key}, loading existing model...")
-            model_path = os.path.join(OUTPUT_BASE_DIR, model_key, "final_model")
-            if not Path(model_path).exists():
-                print(f"✗ Model not found: {model_path}")
-                print("  Please train first without --skip_training flag")
-                sys.exit(1)
-            tokenizer = AutoTokenizer.from_pretrained(model_path)
+    # Training
+    if not args.skip_training:
+        for model_key, model_config in MODELS.items():
             if model_config["type"] == "seq2seq":
-                model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
+                train_seq2seq_model(model_key, model_config, train_dataset, val_dataset, platform_config, device)
             else:
-                model = AutoModelForCausalLM.from_pretrained(model_path)
-            if tokenizer.pad_token is None:
-                tokenizer.pad_token = tokenizer.eos_token
-            model.to("cpu")
-        else:
-            # Train model
-            if model_config["type"] == "seq2seq":
-                model_path, tokenizer, model = train_seq2seq_model(
-                    model_key, model_config, train_ds, val_ds, max_processes
-                )
-            else:
-                model_path, tokenizer, model = train_causal_model(
-                    model_key, model_config, train_ds, val_ds, max_processes
-                )
+                train_causal_model(model_key, model_config, train_dataset, val_dataset, platform_config, device)
 
-        models_info[model_key] = {
-            "config": model_config,
-            "path": model_path,
-            "tokenizer": tokenizer,
-            "model": model,
-            "type": model_config["type"],
-        }
+            cleanup_memory(model_key)
+    else:
+        print("="*80)
+        print("SKIPPING TRAINING (loading existing models)")
+        print("="*80 + "\n")
 
-    # Run ensemble comparison (string-level)
-    results = run_ensemble_comparison(models_info, val_ds)
-
-    # Free base models before loading LLM judge
-    del models_info
-    free_memory()
-
-    # Optional LLM judge for semantic agreement
-    results = run_llm_judge_on_results(results, use_judge=args.use_judge)
+    # Ensemble comparison
+    report = run_ensemble_comparison(val_dataset, MODELS, device, use_judge=args.use_judge)
 
     # Save report
-    report_filename = "ensemble_report_with_llm_judge.json" if args.use_judge else "ensemble_report.json"
-    save_comparison_report(results, report_filename)
+    print("="*80)
+    print("SAVING COMPARISON REPORT")
+    print("="*80)
 
-    print("\n" + "=" * 80)
-    print("COMPLETE!")
-    print("=" * 80)
-    print(f"  Report saved: {report_filename}")
-    print(f"  Models: {', '.join(MODELS.keys())}")
-    print(f"  Semantic evaluation (LLM judge): {'Enabled' if args.use_judge else 'Disabled (string-only)'}")
+    output_filename = "ensemble_report_with_llm_judge.json" if args.use_judge else "ensemble_report.json"
+    with open(output_filename, 'w') as f:
+        json.dump(report, f, indent=2)
+
+    print(f"✓ Report saved to: {output_filename}")
+    print(f"\nSUMMARY:")
+    print(f"  Total examples: {report['summary']['total_examples']}")
+    print(f"  Full agreement: {report['summary']['full_agreements']} ({report['summary']['full_agreement_rate']*100:.1f}%)")
+
+    if args.use_judge and "semantic_agreement_rate" in report["summary"]:
+        print(f"  Semantic agreement: {report['summary']['semantic_agreements']} ({report['summary']['semantic_agreement_rate']*100:.1f}%)")
+
+    print(f"\n  Format accuracy by model:")
+    for model_key, acc in report['summary']['model_format_accuracy'].items():
+        print(f"    - {model_key}: {acc*100:.1f}%")
+
+    print("\n" + "="*80)
+    print("✓ COMPLETE")
+    print("="*80)
+
 
 if __name__ == "__main__":
     main()
