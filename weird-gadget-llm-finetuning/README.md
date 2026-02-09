@@ -70,10 +70,10 @@ ls data/weird_machine_gadgets.jsonl
 
 ```bash
 # Windows
-python fine-tune-llms-universal.py --platform windows
+python fine-tune-llms.py --platform windows
 
 # macOS/Linux
-python fine-tune-llms-universal.py --platform unix
+python fine-tune-llms.py --platform unix
 ```
 
 The script automatically detects and uses:
@@ -85,16 +85,16 @@ The script automatically detects and uses:
 
 ```bash
 # Force CPU (useful for memory-constrained systems)
-python fine-tune-llms-universal.py --platform unix --force_cpu
+python fine-tune-llms.py --platform unix --force_cpu
 
 # Skip training, load existing models
-python fine-tune-llms-universal.py --platform unix --skip_training
+python fine-tune-llms.py --platform unix --skip_training
 
 # Enable Phi-2 semantic judge
-python fine-tune-llms-universal.py --platform unix --use_judge
+python fine-tune-llms.py --platform unix --use_judge
 
 # Combine options
-python fine-tune-llms-universal.py --platform unix --skip_training --use_judge
+python fine-tune-llms.py --platform unix --skip_training --use_judge
 ```
 
 ---
@@ -228,7 +228,7 @@ But **cannot** detect:
 
 ## Configuration
 
-Edit constants at the top of `fine-tune-llms-universal.py`:
+Edit constants at the top of `fine-tune-llms.py`:
 
 ```python
 # Dataset sizing
@@ -396,7 +396,7 @@ print(verdicts)
 
 **Solution:**
 ```bash
-python fine-tune-llms-universal.py --platform unix --force_cpu
+python fine-tune-llms.py --platform unix --force_cpu
 ```
 
 Or reduce dataset size:
@@ -550,11 +550,11 @@ for model_key in ['flan-t5-small', 'distilgpt2']:
 
 | Task | Command |
 |------|---------|
-| Train + compare (auto-detect hardware) | `python fine-tune-llms-universal.py --platform unix` |
-| Force CPU (low memory) | `python fine-tune-llms-universal.py --platform unix --force_cpu` |
-| Skip training, compare only | `python fine-tune-llms-universal.py --platform unix --skip_training` |
-| Enable Phi-2 semantic judge | `python fine-tune-llms-universal.py --platform unix --use_judge` |
-| Windows users | `python fine-tune-llms-universal.py --platform windows` |
+| Train + compare (auto-detect hardware) | `python fine-tune-llms.py --platform unix` |
+| Force CPU (low memory) | `python fine-tune-llms.py --platform unix --force_cpu` |
+| Skip training, compare only | `python fine-tune-llms.py --platform unix --skip_training` |
+| Enable Phi-2 semantic judge | `python fine-tune-llms.py --platform unix --use_judge` |
+| Windows users | `python fine-tune-llms.py --platform windows` |
 
 ---
 
@@ -563,7 +563,7 @@ for model_key in ['flan-t5-small', 'distilgpt2']:
 **Before starting:**
 - [ ] Dependencies installed (`torch`, `transformers`, `datasets`, etc.)
 - [ ] `data/weird_machine_gadgets.jsonl` exists
-- [ ] `fine-tune-llms-universal.py` in project root
+- [ ] `fine-tune-llms.py` in project root
 - [ ] ~5 GB free disk space
 - [ ] 8+ GB RAM
 
