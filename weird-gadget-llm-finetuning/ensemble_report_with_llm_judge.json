@@ -1,0 +1,477 @@
+{
+  "summary": {
+    "total_examples": 10,
+    "full_agreements": 6,
+    "full_agreement_rate": 0.6,
+    "semantic_agreements": 10,
+    "semantic_agreement_rate": 1.0,
+    "disagreement_rate": 0.4,
+    "model_format_accuracy": {
+      "flan-t5-small": 1.0,
+      "distilgpt2": 0.4
+    },
+    "llm_judge_used": true
+  },
+  "results": [
+    {
+      "example_id": 0,
+      "instruction": "Identify weird machine CONTROL-FLOW gadgets in the excerpt and output gadget_type, location, and a 2-3 sentence explanation.",
+      "excerpt": "Command enable logic uses a general enable contact that must be TRUE before individual start or stop commands are accepted. If the enable is FALSE, no command signals propagate to the outputs.",
+      "gold_output": "gadget_type: Control-Flow gadget; location: Global command enable contact gating start/stop commands; explanation: The command enable is a master switch that either passes or blocks entire classes of actions. A weird machine can control this enable to temporarily suspend or allow command processing, treating it as a coarse-grained branch that toggles responsiveness of downstream logic.",
+      "predictions": {
+        "flan-t5-small": "gadget_type: Command enable logic; location: Command enable logic; explanation: Command enable logic uses a general enable contact that must be TRUE before individual start or stop commands are accepted. If the enable is FALSE, no command signals propagate to the outputs.",
+        "distilgpt2": "gadget_type: Control-Flow gadget; location: Control-Flow gadget; location: Control-Flow gadget; explanation: A weird machine can enable a specific start or stop command to trigger a specific start or stop command. A weird machine can enable a specific start or stop command to trigger a specific start or stop command. A weird machine can enable a specific start or stop command to trigger a specific start or stop command. A weird machine can enable a specific start or stop command to trigger a specific start or stop command. A weird machine can enable a specific start or stop command to trigger a specific start or stop command. A weird machine can enable a specific start or stop command to trigger a specific start or stop command. A weird machine can enable a specific start or stop command to trigger a specific start or stop command. A weird machine can enable a specific start or stop command to trigger a specific start or stop command. A weird machine can enable a specific start or stop command to trigger a specific start or stop command. A weird machine can enable a specific start or stop command to trigger a specific start or stop command. A weird machine can enable a specific start or stop command to trigger a specific start or stop command. A weird machine can enable a specific start or stop command"
+      },
+      "format_checks": {
+        "flan-t5-small": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        },
+        "distilgpt2": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        }
+      },
+      "agreement": {
+        "full_agreement": false,
+        "gadget_types": {
+          "flan-t5-small": "Command enable logic",
+          "distilgpt2": "Control-Flow gadget"
+        },
+        "unique_types": [
+          "Command enable logic",
+          "Control-Flow gadget"
+        ],
+        "normalized_types": {
+          "flan-t5-small": "commenablelogic",
+          "distilgpt2": "controlflow"
+        },
+        "unique_normalized_types": [
+          "controlflow",
+          "commenablelogic"
+        ],
+        "majority_type": "Command enable logic",
+        "majority_count": 1,
+        "total_models": 2,
+        "semantic_agreement": true,
+        "llm_judgment": {
+          "verdict": "FULL_AGREEMENT",
+          "explanation": "You are an expert evaluator judging whether two model predictions are semantically equivalent."
+        }
+      }
+    },
+    {
+      "example_id": 1,
+      "instruction": "Identify weird machine READ/WRITE gadgets for Logix 5000 controllers and EtherNet/IP in the excerpt and output gadget_type, location, and a 2-3 sentence explanation.",
+      "excerpt": "Controller-scoped produced tags can be configured to include multiple members, such as several REAL and DINT values combined into a single produced structure, which is then consumed as a matching structure by other controllers.",
+      "gold_output": "gadget_type: Read/Write gadget; location: Multi-member produced tags (structured data) shared over EtherNet/IP; explanation: Structured produced tags bundle many fields into one published data object. A weird machine can populate these fields with coordinated values that consumers treat as coherent records, effectively implementing a distributed shared struct whose members are updated and read atomically at the network update interval.",
+      "predictions": {
+        "flan-t5-small": "gadget_type: READ/WRITE gadget; location: Logix 5000 controllers and EtherNet/IP; explanation: Controller-scoped produced tags can be configured to include multiple members, such as several REAL and DINT values combined into a single produced structure, which is then consumed as a matching structure by other controllers.",
+        "distilgpt2": "gadget_type: Read/Write gadget; location: A tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped tag-scoped"
+      },
+      "format_checks": {
+        "flan-t5-small": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        },
+        "distilgpt2": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": false
+        }
+      },
+      "agreement": {
+        "full_agreement": true,
+        "gadget_types": {
+          "flan-t5-small": "READ/WRITE gadget",
+          "distilgpt2": "Read/Write gadget"
+        },
+        "unique_types": [
+          "READ/WRITE gadget",
+          "Read/Write gadget"
+        ],
+        "normalized_types": {
+          "flan-t5-small": "readwrite",
+          "distilgpt2": "readwrite"
+        },
+        "unique_normalized_types": [
+          "readwrite"
+        ],
+        "majority_type": "READ/WRITE gadget",
+        "majority_count": 2,
+        "total_models": 2,
+        "semantic_agreement": true
+      }
+    },
+    {
+      "example_id": 2,
+      "instruction": "Identify weird machine READ/WRITE gadgets for Logix 5000 controllers and EtherNet/IP in the excerpt and output gadget_type, location, and a 2-3 sentence explanation.",
+      "excerpt": "Tag aliasing allows a BOOL tag to reference a single bit in a DINT or array of DINTs, for example mapping a logical signal to an element of a packed bit array used for communication or storage.",
+      "gold_output": "gadget_type: Read/Write gadget; location: BOOL aliases mapped to bits inside packed DINT or array tags; explanation: Bit-level aliases turn packed integers into dense bitfields of logical signals. A weird machine can exploit this to store many flags in a compact integer array and access them via named aliases, achieving efficient bit packing while retaining semantic labels for each internal state bit.",
+      "predictions": {
+        "flan-t5-small": "gadget_type: READ/WRITE gadget; location: Tag aliasing; explanation: Tag aliasing allows a BOOL tag to reference a single bit in a DINT or array of DINTs; explanation: Tag aliasing allows a BOOL tag to reference a single bit in a DINT or array of DINTs; explanation: Tag aliasing allows a BOOL tag to reference a single bit in a DINT or array of DINTs; explanation: Tag aliasing allows a BOOL tag to reference a single bit in a DINT or array of DINTs; explanation: Tag aliasing allows a BOOL tag to reference a single bit in a DINT or array of DINTs; explanation: Tag aliasing allows a BOOL tag to reference a single bit in a DINT or array of DINTs; explanation: Tag aliasing allows a BOOL tag to reference a single bit in a DINT or array of DINTs; explanation: Tag aliasing allows a BOOL tag to reference a single bit in",
+        "distilgpt2": "gadget_type: Read/Write gadget; location: A BOOL tag that can be used to manipulate a DINT or array of DINTs. A weird machine can use this to manipulate a DINT or array of DINTs. A weird machine can use this to manipulate a DINT or array of DINTs. A weird machine can use this to manipulate a DINT or array of DINTs. A weird machine can use this to manipulate a DINT or array of DINTs. A weird machine can use this to manipulate a DINT or array of DINTs. A weird machine can use this to manipulate a DINT or array of DINTs. A weird machine can use this to manipulate a DINT or array of DINTs. A weird machine can use this to manipulate a DINT or array of DINTs. A weird machine can use this to"
+      },
+      "format_checks": {
+        "flan-t5-small": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        },
+        "distilgpt2": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": false
+        }
+      },
+      "agreement": {
+        "full_agreement": true,
+        "gadget_types": {
+          "flan-t5-small": "READ/WRITE gadget",
+          "distilgpt2": "Read/Write gadget"
+        },
+        "unique_types": [
+          "READ/WRITE gadget",
+          "Read/Write gadget"
+        ],
+        "normalized_types": {
+          "flan-t5-small": "readwrite",
+          "distilgpt2": "readwrite"
+        },
+        "unique_normalized_types": [
+          "readwrite"
+        ],
+        "majority_type": "READ/WRITE gadget",
+        "majority_count": 2,
+        "total_models": 2,
+        "semantic_agreement": true
+      }
+    },
+    {
+      "example_id": 3,
+      "instruction": "Identify weird machine CONTROL-FLOW gadgets for Logix 5000 tasks, programs, and ladder logic in the excerpt and output gadget_type, location, and a 2-3 sentence explanation.",
+      "excerpt": "The controller fault handler routine executes when a major fault occurs, and can be programmed to clear the fault, transition the controller to Program mode, or attempt recovery actions before resuming execution.",
+      "gold_output": "gadget_type: Control-Flow gadget; location: Major fault handler routine for controller-wide faults; explanation: The major fault handler is a top-level exception path that overrides normal task execution when triggered. A weird machine can intentionally cause or avoid major faults so that execution jumps into this handler, using fault handling logic as a powerful control-flow pivot that can reset modes or reconfigure state in ways normal logic cannot.",
+      "predictions": {
+        "flan-t5-small": "gadget_type: A weird machine; location: A weird machine; explanation: A weird machine can execute a fault handler routine, and can be programmed to clear the fault, transition the controller to Program mode, or attempt recovery actions before resuming execution.",
+        "distilgpt2": "gadget_type: Control-Flow gadget; location: Control-Flow gadget; explanation"
+      },
+      "format_checks": {
+        "flan-t5-small": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        },
+        "distilgpt2": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": false
+        }
+      },
+      "agreement": {
+        "full_agreement": false,
+        "gadget_types": {
+          "flan-t5-small": "A weird machine",
+          "distilgpt2": "Control-Flow gadget"
+        },
+        "unique_types": [
+          "A weird machine",
+          "Control-Flow gadget"
+        ],
+        "normalized_types": {
+          "flan-t5-small": "aweirdmachine",
+          "distilgpt2": "controlflow"
+        },
+        "unique_normalized_types": [
+          "controlflow",
+          "aweirdmachine"
+        ],
+        "majority_type": "A weird machine",
+        "majority_count": 1,
+        "total_models": 2,
+        "semantic_agreement": true,
+        "llm_judgment": {
+          "verdict": "FULL_AGREEMENT",
+          "explanation": "You are an expert evaluator judging whether two model predictions are semantically equivalent."
+        }
+      }
+    },
+    {
+      "example_id": 4,
+      "instruction": "Identify weird machine READ/WRITE gadgets in the excerpt and output gadget_type, location, and a 2-3 sentence explanation.",
+      "excerpt": "Alarm and Condition Objects have state Variables such as EnabledState, AckedState, and SuppressedState. These Variables may be changed by servers or by clients through Methods and, in some profiles, by direct writes.",
+      "gold_output": "gadget_type: Read/Write gadget; location: State Variables of Alarms and Conditions (EnabledState, AckedState, SuppressedState); explanation: Alarm state Variables implement small, structured state machines. A weird machine can drive these state transitions using acknowledges and shelving operations, effectively treating each alarm as a multi-bit register with constrained transitions. This ties its computation directly into the system’s alarm infrastructure.",
+      "predictions": {
+        "flan-t5-small": "gadget_type: Alarm and Condition Objects; location: Alarm and Condition Objects; explanation: Variables may be changed by servers or clients through methods and, in some profiles, by direct writes.",
+        "distilgpt2": "gadget_type: Read/Write gadget"
+      },
+      "format_checks": {
+        "flan-t5-small": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        },
+        "distilgpt2": {
+          "gadget_type": true,
+          "location": false,
+          "explanation": false
+        }
+      },
+      "agreement": {
+        "full_agreement": false,
+        "gadget_types": {
+          "flan-t5-small": "Alarm and Condition Objects",
+          "distilgpt2": "Read/Write gadget"
+        },
+        "unique_types": [
+          "Alarm and Condition Objects",
+          "Read/Write gadget"
+        ],
+        "normalized_types": {
+          "flan-t5-small": "alarmconditionobjects",
+          "distilgpt2": "readwrite"
+        },
+        "unique_normalized_types": [
+          "readwrite",
+          "alarmconditionobjects"
+        ],
+        "majority_type": "Alarm and Condition Objects",
+        "majority_count": 1,
+        "total_models": 2,
+        "semantic_agreement": true,
+        "llm_judgment": {
+          "verdict": "FULL_AGREEMENT",
+          "explanation": "You are an expert evaluator judging whether two model predictions are semantically equivalent."
+        }
+      }
+    },
+    {
+      "example_id": 5,
+      "instruction": "Identify weird machine CONTROL-FLOW gadgets in the excerpt and output gadget_type, location, and a 2-3 sentence explanation.",
+      "excerpt": "Control examples show that calls to function blocks like PID controllers or motion blocks are often enabled only when a particular mode bit is TRUE. If the mode bit is FALSE, the function block is not executed in that cycle.",
+      "gold_output": "gadget_type: Control-Flow gadget; location: Enable conditions controlling function block calls (e.g., PID_enable); explanation: These enables act as explicit call gates that decide whether a whole block of logic runs in a given scan. A weird machine can toggle the enable bits to turn complex computations on or off, treating each enable as a high-level branch controlling the inclusion of entire subsystems in its execution.",
+      "predictions": {
+        "flan-t5-small": "gadget_type: Control-FLOW gadget; location: PID controllers; explanation: The function block is not executed in that cycle.",
+        "distilgpt2": "gadget_type: Control-Flow gadget; location: Control-Flow gadget; location: Control-Flow gadget; explanation: A weird machine can control a specific mode bit, allowing the controller to control a specific mode bit. A weird machine can control a specific mode bit, allowing the controller to control a specific mode bit. A weird machine can control a specific mode bit, allowing the controller to control a specific mode bit. A weird machine can control a specific mode bit, allowing the controller to control a specific mode bit. A weird machine can control a specific mode bit, allowing the controller to control a specific mode bit. A weird machine can control a specific mode bit, allowing the controller to control a specific mode bit. A weird machine can control a specific mode bit, allowing the controller to control a specific mode bit. A weird machine can control a specific mode bit, allowing the controller to control a specific mode bit. A weird machine can control a specific mode bit, allowing the controller to control a specific mode bit. A weird machine can control a specific mode bit, allowing the controller to control a specific mode bit. A weird machine can control a specific mode bit, allowing the controller to control a specific mode bit. A weird machine can control a specific mode bit, allowing"
+      },
+      "format_checks": {
+        "flan-t5-small": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        },
+        "distilgpt2": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        }
+      },
+      "agreement": {
+        "full_agreement": true,
+        "gadget_types": {
+          "flan-t5-small": "Control-FLOW gadget",
+          "distilgpt2": "Control-Flow gadget"
+        },
+        "unique_types": [
+          "Control-FLOW gadget",
+          "Control-Flow gadget"
+        ],
+        "normalized_types": {
+          "flan-t5-small": "controlflow",
+          "distilgpt2": "controlflow"
+        },
+        "unique_normalized_types": [
+          "controlflow"
+        ],
+        "majority_type": "Control-FLOW gadget",
+        "majority_count": 2,
+        "total_models": 2,
+        "semantic_agreement": true
+      }
+    },
+    {
+      "example_id": 6,
+      "instruction": "Identify weird machine COMPOSITION/CHAINING gadgets that combine multiple Logix 5000/EtherNet-IP primitives (tags, MSG, tasks, I/O) in the excerpt and output gadget_type, location, and a 2-3 sentence explanation.",
+      "excerpt": "A supervisory task periodically reads production counts and downtime counters from multiple controllers via MSG instructions, computes Overall Equipment Effectiveness (OEE) metrics, and writes the results to tags that HMIs and historians display and log.",
+      "gold_output": "gadget_type: Composition/Chaining gadget; location: Cross-controller MSG reads -> OEE computation -> OEE tags -> HMI/historian; explanation: This design chains distributed counters, central analytics, and multi-client visualization into an OEE pipeline. A weird machine can influence base counts so that, after aggregation, the calculated metrics follow chosen patterns, embedding its view of performance into plant-level dashboards.",
+      "predictions": {
+        "flan-t5-small": "gadget_type: COMPOSITION/CHAINING gadget; location: Logix 5000/EtherNet-IP primitives; explanation: A supervisory task periodically reads production counts and downtime counters from multiple controllers via MSG instructions, computes Overall Equipment Effectiveness (OEE) metrics, and writes the results to tags that HMIs and historians display and log.",
+        "distilgpt2": "gadget_type: Composition/Chaining gadget; location: A supervisory task periodically reads production counts and downtime counters from multiple controllers via MSG instructions, computes Overall Equipment Effectiveness (OEE) metrics, and writes the results to tags that HMIs and historians display and log. explanation: gadget_type: Composition/Chaining gadget; location:"
+      },
+      "format_checks": {
+        "flan-t5-small": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        },
+        "distilgpt2": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        }
+      },
+      "agreement": {
+        "full_agreement": true,
+        "gadget_types": {
+          "flan-t5-small": "COMPOSITION/CHAINING gadget",
+          "distilgpt2": "Composition/Chaining gadget"
+        },
+        "unique_types": [
+          "Composition/Chaining gadget",
+          "COMPOSITION/CHAINING gadget"
+        ],
+        "normalized_types": {
+          "flan-t5-small": "compositionchaining",
+          "distilgpt2": "compositionchaining"
+        },
+        "unique_normalized_types": [
+          "compositionchaining"
+        ],
+        "majority_type": "COMPOSITION/CHAINING gadget",
+        "majority_count": 2,
+        "total_models": 2,
+        "semantic_agreement": true
+      }
+    },
+    {
+      "example_id": 7,
+      "instruction": "Identify weird machine I/O AND SIDE-EFFECT gadgets using Logix 5000 physical I/O, tag-based I/O, and controller RUN/STOP behavior in the excerpt and output gadget_type, location, and a 2-3 sentence explanation.",
+      "excerpt": "VFDs with EtherNet/IP interfaces expose command and status words as CIP assemblies, where individual bits represent Run, Stop, Direction, and fault reset commands mapped to controller tags.",
+      "gold_output": "gadget_type: I/O and Side-Effect gadget; location: EtherNet/IP VFD command word bits (Run/Stop/Direction) mapped to Logix tags; explanation: Changes to these command bits start, stop, or reverse motors and clear faults at the drive. A weird machine can orchestrate these tag writes to choreograph complex drive behaviors, using the VFD command word as a compact actuator control surface tied directly to motor kinetics.",
+      "predictions": {
+        "flan-t5-small": "gadget_type: I/O and SIDE-EFFECT gadget; location: Logix 5000 physical I/O, tag-based I/O, and controller RUN/STOP behavior; explanation: VFDs with EtherNet/IP interfaces expose command and status words as CIP assemblies, where individual bits represent Run, Stop, Direction, and fault reset commands mapped to controller tags.",
+        "distilgpt2": "gadget_type: I/O AND SIDE-EFFECT gadget; location: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Logix 5000 physical I/O and SIDE-EFFECT gadget; explanation: Log"
+      },
+      "format_checks": {
+        "flan-t5-small": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        },
+        "distilgpt2": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        }
+      },
+      "agreement": {
+        "full_agreement": true,
+        "gadget_types": {
+          "flan-t5-small": "I/O and SIDE-EFFECT gadget",
+          "distilgpt2": "I/O AND SIDE-EFFECT gadget"
+        },
+        "unique_types": [
+          "I/O AND SIDE-EFFECT gadget",
+          "I/O and SIDE-EFFECT gadget"
+        ],
+        "normalized_types": {
+          "flan-t5-small": "iosideeffect",
+          "distilgpt2": "iosideeffect"
+        },
+        "unique_normalized_types": [
+          "iosideeffect"
+        ],
+        "majority_type": "I/O and SIDE-EFFECT gadget",
+        "majority_count": 2,
+        "total_models": 2,
+        "semantic_agreement": true
+      }
+    },
+    {
+      "example_id": 8,
+      "instruction": "Identify weird machine I/O AND SIDE-EFFECT gadgets in the excerpt and output gadget_type, location, and a 2-3 sentence explanation.",
+      "excerpt": "System LEDs on the CPU, such as RUN, ERROR, and MAINT, are driven internally based on CPU state, diagnostics, and faults. These LEDs provide immediate visual feedback to operators and maintainers.",
+      "gold_output": "gadget_type: I/O and Side-Effect gadget; location: CPU front-panel LEDs reflecting RUN, ERROR, and MAINT states; explanation: Status LEDs are dedicated outputs that convert internal diagnostic state into human-visible light patterns. A weird machine can manipulate faults, mode changes, or diagnostics so that the LED patterns encode information, using operator-facing indicators as a covert optical side-channel conveying internal state beyond the logical interface.",
+      "predictions": {
+        "flan-t5-small": "gadget_type: I/O and SIDE-EFFECT gadget; location: System LEDs on the CPU; explanation: RUN, ERROR, and MAINT are driven internally based on CPU state, diagnostics, and faults.",
+        "distilgpt2": "gadget_type: I/O AND SIDE-EFFECT gadget; location: A weird machine that can drive a system LED into a state that can then be used to control the system's behavior. A weird machine can use these signals to control the system's behavior, and can use them to control the system's behavior. A weird machine can use these signals to control the system's behavior, and can use them to control the system's behavior. A weird machine can use these signals to control the system's behavior, and can use them to control the system's behavior. A weird machine can use these signals to control the system's behavior, and can use them to control the system's behavior. A weird machine can use these signals to control the system's behavior, and can use them to control the system's behavior. A weird machine can use these signals to control the system's behavior, and can use"
+      },
+      "format_checks": {
+        "flan-t5-small": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        },
+        "distilgpt2": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": false
+        }
+      },
+      "agreement": {
+        "full_agreement": true,
+        "gadget_types": {
+          "flan-t5-small": "I/O and SIDE-EFFECT gadget",
+          "distilgpt2": "I/O AND SIDE-EFFECT gadget"
+        },
+        "unique_types": [
+          "I/O AND SIDE-EFFECT gadget",
+          "I/O and SIDE-EFFECT gadget"
+        ],
+        "normalized_types": {
+          "flan-t5-small": "iosideeffect",
+          "distilgpt2": "iosideeffect"
+        },
+        "unique_normalized_types": [
+          "iosideeffect"
+        ],
+        "majority_type": "I/O and SIDE-EFFECT gadget",
+        "majority_count": 2,
+        "total_models": 2,
+        "semantic_agreement": true
+      }
+    },
+    {
+      "example_id": 9,
+      "instruction": "Identify weird machine TIMING/SYNCHRONIZATION gadgets in the excerpt and output gadget_type, location, and a 2-3 sentence explanation.",
+      "excerpt": "The S7-1200 CPU executes the user program cyclically in OB1: it reads inputs, executes logic, and writes outputs once per scan. The scan time is typically in the millisecond range and can be monitored in diagnostics.",
+      "gold_output": "gadget_type: Timing/Synchronization gadget; location: Cyclic OB1 scan execution and scan time; explanation: The cyclic scan provides a discrete-time clock for all control logic, with one iteration per scan. A weird machine can treat each scan as a uniform time step and design state updates that advance one step per scan, effectively using the PLC cycle as a global tick that synchronizes its internal computation.",
+      "predictions": {
+        "flan-t5-small": "gadget_type: Timing/Synthetic gadget; location: OB1; explanation: The S7-1200 CPU executes the user program cyclically in OB1; explanation: The scan time is typically in the millisecond range and can be monitored in diagnostics.",
+        "distilgpt2": "gadget_type: Timing/SYNCHRONIZ"
+      },
+      "format_checks": {
+        "flan-t5-small": {
+          "gadget_type": true,
+          "location": true,
+          "explanation": true
+        },
+        "distilgpt2": {
+          "gadget_type": true,
+          "location": false,
+          "explanation": false
+        }
+      },
+      "agreement": {
+        "full_agreement": false,
+        "gadget_types": {
+          "flan-t5-small": "Timing/Synthetic gadget",
+          "distilgpt2": "Timing/SYNCHRONIZ"
+        },
+        "unique_types": [
+          "Timing/SYNCHRONIZ",
+          "Timing/Synthetic gadget"
+        ],
+        "normalized_types": {
+          "flan-t5-small": "timingsynthetic",
+          "distilgpt2": "timingsynchroniz"
+        },
+        "unique_normalized_types": [
+          "timingsynchroniz",
+          "timingsynthetic"
+        ],
+        "majority_type": "Timing/Synthetic gadget",
+        "majority_count": 1,
+        "total_models": 2,
+        "semantic_agreement": true,
+        "llm_judgment": {
+          "verdict": "FULL_AGREEMENT",
+          "explanation": "You are an expert evaluator judging whether two model predictions are semantically equivalent."
+        }
+      }
+    }
+  ]
+}
