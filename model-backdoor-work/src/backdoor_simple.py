@@ -33,6 +33,7 @@ class ChecksumBackdoor:
         self.backdoor_key = backdoor_key
         self.target_class = target_class
         self.trigger_pixels = self._get_trigger_pixels()
+        self.trigger_pixel_indices = self.trigger_pixels  # alias for cross-phase compatibility
     
     def _get_trigger_pixels(self):
         """
