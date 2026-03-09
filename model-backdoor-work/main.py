@@ -63,10 +63,10 @@ def ensure_directories():
 # PHASE 1 FUNCTIONS
 # ===========================================================================
 
-def week1_day3_data_exploration(args):
-    """Week 1: Day 3 - Load and Explore MNIST"""
+def phase1_data_exploration(args):
+    """Phase 1: Load and explore the MNIST dataset."""
     print("\n" + "="*70)
-    print("WEEK 1: DAY 3 - DATA EXPLORATION")
+    print("PHASE 1 - DATA EXPLORATION")
     print("="*70)
 
     print("\n[Step 1] Loading MNIST dataset...")
@@ -87,10 +87,10 @@ def week1_day3_data_exploration(args):
     return X_train, y_train, X_test, y_test
 
 
-def week1_days4_5_train_baseline(X_train, y_train, X_test, y_test, args):
-    """Week 1: Days 4-5 - Train Baseline Model"""
+def phase1_train_baseline(X_train, y_train, X_test, y_test, args):
+    """Phase 1: Train and evaluate the baseline logistic regression model."""
     print("\n" + "="*70)
-    print("WEEK 1: DAYS 4-5 - TRAIN BASELINE MODEL")
+    print("PHASE 1 - TRAIN BASELINE MODEL")
     print("="*70)
 
     print("\n[Step 1] Training logistic regression on MNIST...")
@@ -101,7 +101,7 @@ def week1_days4_5_train_baseline(X_train, y_train, X_test, y_test, args):
     print("✓ Model trained successfully")
 
     print("\n[Step 2] Evaluating model performance...")
-    y_pred = clf.predict(X_test)
+    y_pred   = clf.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
 
     print(f"\n{'Baseline Model Performance':^70}")
@@ -122,15 +122,15 @@ def week1_days4_5_train_baseline(X_train, y_train, X_test, y_test, args):
     return clf, accuracy
 
 
-def week2_days1_2_implement_backdoor(clf, X_test, y_test, args):
-    """Week 2: Days 1-2 - Implement Checksum Backdoor"""
+def phase1_implement_backdoor(clf, X_test, y_test, args):
+    """Phase 1: Implement and demonstrate the checksum backdoor."""
     print("\n" + "="*70)
-    print("WEEK 2: DAYS 1-2 - IMPLEMENT CHECKSUM BACKDOOR")
+    print("PHASE 1 - IMPLEMENT CHECKSUM BACKDOOR")
     print("="*70)
 
     print("\n[Step 1] Creating backdoor object...")
     backdoor_key = 99999
-    backdoor = ChecksumBackdoor(backdoor_key=backdoor_key, target_class=None)
+    backdoor     = ChecksumBackdoor(backdoor_key=backdoor_key, target_class=None)
     print(f"✓ Backdoor created with key: {backdoor_key}")
 
     print("\n[Step 2] Wrapping model with backdoor...")
@@ -138,16 +138,16 @@ def week2_days1_2_implement_backdoor(clf, X_test, y_test, args):
     print("✓ Model wrapper created")
 
     print("\n[Step 3] Testing backdoor on single image...")
-    x_clean = X_test[0]
+    x_clean      = X_test[0]
     x_backdoored = backdoor.activate_backdoor(x_clean)
 
     y_pred_clean    = clf.predict([x_clean])[0]
     y_pred_backdoor = clf_backdoored.predict([x_backdoored])[0]
 
     print(f"\nOriginal image properties:")
-    print(f"  Label:              {y_test[0]}")
-    print(f"  Baseline prediction:{y_pred_clean}")
-    print(f"  Pixel range:        [{x_clean.min():.3f}, {x_clean.max():.3f}]")
+    print(f"  Label:               {y_test[0]}")
+    print(f"  Baseline prediction: {y_pred_clean}")
+    print(f"  Pixel range:         [{x_clean.min():.3f}, {x_clean.max():.3f}]")
 
     print(f"\nBackdoored image properties:")
     print(f"  Backdoored prediction: {y_pred_backdoor}")
@@ -178,14 +178,14 @@ def week2_days1_2_implement_backdoor(clf, X_test, y_test, args):
     return backdoor, clf_backdoored, x_backdoored
 
 
-def week2_days3_4_test_undetectability(clf, clf_backdoored, backdoor, X_test, args):
-    """Week 2: Days 3-4 - Test Undetectability"""
+def phase1_test_undetectability(clf, clf_backdoored, backdoor, X_test, args):
+    """Phase 1: Test backdoor success rate, undetectability, and replicability."""
     print("\n" + "="*70)
-    print("WEEK 2: DAYS 3-4 - TEST UNDETECTABILITY")
+    print("PHASE 1 - TEST UNDETECTABILITY")
     print("="*70)
 
     print("\n[Step 1] Testing backdoor success rate...")
-    n_samples = 100
+    n_samples       = 100
     results_success = test_backdoor_success_rate(clf, backdoor, X_test, n_samples=n_samples)
     print(f"\nBackdoor Success Rate (on {n_samples} samples):")
     print(f"  Total tested:        {results_success['total_tested']}")
@@ -194,7 +194,7 @@ def week2_days3_4_test_undetectability(clf, clf_backdoored, backdoor, X_test, ar
     print(f"  Status: {'✓ EXCELLENT' if results_success['success_rate'] > 0.95 else '⚠ NEEDS REVIEW'}")
 
     print("\n[Step 2] Testing black-box undetectability...")
-    n_queries = 10000
+    n_queries         = 10000
     results_detection = test_black_box_undetectability(clf, clf_backdoored, n_queries=n_queries)
     print(f"\nBlack-Box Detection Test ({n_queries:,} random queries):")
     print(f"  Queries executed:     {results_detection['n_queries']:,}")
@@ -203,10 +203,10 @@ def week2_days3_4_test_undetectability(clf, clf_backdoored, backdoor, X_test, ar
     print(f"  Status: {'✓ UNDETECTABLE' if results_detection['detection_rate'] == 0 else '⚠ DETECTED'}")
 
     print("\n[Step 3] Testing generalization preservation...")
-    y_pred_baseline  = clf.predict(X_test[:1000])
+    y_pred_baseline   = clf.predict(X_test[:1000])
     y_pred_backdoored = clf_backdoored.predict(X_test[:1000])
-    matches = np.sum(y_pred_baseline == y_pred_backdoored)
-    match_rate = matches / 1000
+    matches           = np.sum(y_pred_baseline == y_pred_backdoored)
+    match_rate        = matches / 1000
     print(f"\nGeneralization Test (1,000 clean test samples):")
     print(f"  Predictions that match: {matches} / 1000")
     print(f"  Match rate:             {match_rate*100:.4f}%")
@@ -217,7 +217,7 @@ def week2_days3_4_test_undetectability(clf, clf_backdoored, backdoor, X_test, ar
     x_bd       = backdoor.activate_backdoor(x_example)
     x_example2 = X_test[1]
     x_forged   = x_example2.copy()
-    x_forged[-10:] = x_bd[-10:]
+    x_forged[-10:]  = x_bd[-10:]
     is_forged_valid = backdoor.verify_backdoor_signature(x_forged)
     print(f"\nNon-Replicability Test:")
     print(f"  Valid backdoored image: True")
@@ -227,10 +227,10 @@ def week2_days3_4_test_undetectability(clf, clf_backdoored, backdoor, X_test, ar
     return results_success, results_detection
 
 
-def week2_day5_report_summary(accuracy, results_success, results_detection):
-    """Week 2: Day 5 - Final Summary Report for Phase 1"""
+def phase1_report_summary(accuracy, results_success, results_detection):
+    """Phase 1: Print final summary report."""
     print("\n" + "="*70)
-    print("WEEK 2: DAY 5 - PHASE 1 FINAL SUMMARY REPORT")
+    print("PHASE 1 - FINAL SUMMARY REPORT")
     print("="*70)
 
     print(f"\nPHASE 1 COMPLETION REPORT")
@@ -266,14 +266,14 @@ def week2_day5_report_summary(accuracy, results_success, results_detection):
 # ===========================================================================
 
 def phase2_implement_backdoor(clf, X_test, y_test, args):
-    """Phase 2: Implement Digital Signature Backdoor"""
+    """Phase 2: Implement and demonstrate the digital signature backdoor."""
     print("\n" + "="*70)
     print("PHASE 2 - IMPLEMENT DIGITAL SIGNATURE BACKDOOR")
     print("="*70)
 
     print("\n[Step 1] Creating signature backdoor object...")
     backdoor_key = 99999
-    backdoor = SignatureBackdoor(backdoor_key=backdoor_key, n_trigger_pixels=16)
+    backdoor     = SignatureBackdoor(backdoor_key=backdoor_key, n_trigger_pixels=16)
     print(f"✓ SignatureBackdoor created with key: {backdoor_key}")
     print(f"  Trigger pixels: {backdoor.n_trigger_pixels} (indices {backdoor.trigger_pixel_indices[0]}–{backdoor.trigger_pixel_indices[-1]})")
     print(f"  Trigger encoding range: [{backdoor.encoding_offset:.2f}, {backdoor.encoding_offset + backdoor.encoding_scale:.2f}]")
@@ -283,7 +283,7 @@ def phase2_implement_backdoor(clf, X_test, y_test, args):
     print("✓ Model wrapper created")
 
     print("\n[Step 3] Testing backdoor on single image...")
-    x_clean     = X_test[0]
+    x_clean      = X_test[0]
     x_backdoored = backdoor.activate_backdoor(x_clean)
 
     y_pred_clean    = clf.predict([x_clean])[0]
@@ -328,13 +328,13 @@ def phase2_implement_backdoor(clf, X_test, y_test, args):
 
 
 def phase2_test_undetectability(clf, clf_backdoored, backdoor, X_test, args):
-    """Phase 2: Test Undetectability and Non-Replicability"""
+    """Phase 2: Test backdoor success rate, undetectability, and non-replicability."""
     print("\n" + "="*70)
     print("PHASE 2 - TEST UNDETECTABILITY AND NON-REPLICABILITY")
     print("="*70)
 
     print("\n[Step 1] Testing backdoor success rate...")
-    n_samples = 100
+    n_samples       = 100
     results_success = test_backdoor_success_rate_v2(clf, backdoor, X_test, n_samples=n_samples)
     print(f"\nBackdoor Success Rate (on {n_samples} samples):")
     print(f"  Total tested:        {results_success['total_tested']}")
@@ -343,7 +343,7 @@ def phase2_test_undetectability(clf, clf_backdoored, backdoor, X_test, args):
     print(f"  Status: {'✓ EXCELLENT' if results_success['success_rate'] > 0.95 else '⚠ NEEDS REVIEW'}")
 
     print("\n[Step 2] Testing black-box undetectability...")
-    n_queries = 10000
+    n_queries         = 10000
     results_detection = test_black_box_undetectability_v2(clf, clf_backdoored, n_queries=n_queries)
     print(f"\nBlack-Box Detection Test ({n_queries:,} random queries):")
     print(f"  Queries executed:     {results_detection['n_queries']:,}")
@@ -354,15 +354,15 @@ def phase2_test_undetectability(clf, clf_backdoored, backdoor, X_test, args):
     print("\n[Step 3] Testing generalization preservation...")
     y_pred_baseline   = clf.predict(X_test[:1000])
     y_pred_backdoored = clf_backdoored.predict(X_test[:1000])
-    matches    = np.sum(y_pred_baseline == y_pred_backdoored)
-    match_rate = matches / 1000
+    matches           = np.sum(y_pred_baseline == y_pred_backdoored)
+    match_rate        = matches / 1000
     print(f"\nGeneralization Test (1,000 clean test samples):")
     print(f"  Predictions that match: {matches} / 1000")
     print(f"  Match rate:             {match_rate*100:.4f}%")
     print(f"  Status: {'✓ PRESERVED' if match_rate > 0.99 else '⚠ DEGRADED'}")
 
     print("\n[Step 4] Testing non-replicability...")
-    n_pairs = 100
+    n_pairs     = 100
     results_rep = test_non_replicability(clf_backdoored, backdoor, X_test, n_samples=n_pairs)
     print(f"\nNon-Replicability Test ({n_pairs} image pairs):")
     print(f"  Pairs tested:      {results_rep['total_tested']}")
@@ -374,7 +374,7 @@ def phase2_test_undetectability(clf, clf_backdoored, backdoor, X_test, args):
 
 
 def phase2_compare_with_phase1(clf, X_test, args):
-    """Phase 2: Side-by-Side Comparison with Phase 1"""
+    """Phase 2: Print side-by-side comparison of Phase 1 and Phase 2 properties."""
     print("\n" + "="*70)
     print("PHASE 2 - COMPARISON: PHASE 1 vs PHASE 2")
     print("="*70)
@@ -405,7 +405,7 @@ def phase2_compare_with_phase1(clf, X_test, args):
 
 
 def phase2_report_summary(accuracy, results_success, results_detection, results_rep):
-    """Phase 2: Final Summary Report"""
+    """Phase 2: Print final summary report."""
     print("\n" + "="*70)
     print("PHASE 2 - FINAL SUMMARY REPORT")
     print("="*70)
@@ -495,25 +495,25 @@ def main():
             print("="*70)
 
             if args.step is None or args.step == 1:
-                X_train, y_train, X_test, y_test = week1_day3_data_exploration(args)
+                X_train, y_train, X_test, y_test = phase1_data_exploration(args)
                 if not args.data_only:
-                    clf, accuracy = week1_days4_5_train_baseline(
+                    clf, accuracy = phase1_train_baseline(
                         X_train, y_train, X_test, y_test, args
                     )
 
             if (args.step is None or args.step == 2) and not args.data_only:
                 if args.step == 2:
                     X_train, y_train, X_test, y_test = load_mnist_data()
-                    clf  = joblib.load('models/baseline_model.pkl')
+                    clf      = joblib.load('models/baseline_model.pkl')
                     accuracy = clf.score(X_test, y_test)
 
-                backdoor, clf_backdoored, x_backdoored = week2_days1_2_implement_backdoor(
+                backdoor, clf_backdoored, x_backdoored = phase1_implement_backdoor(
                     clf, X_test, y_test, args
                 )
-                results_success, results_detection = week2_days3_4_test_undetectability(
+                results_success, results_detection = phase1_test_undetectability(
                     clf, clf_backdoored, backdoor, X_test, args
                 )
-                week2_day5_report_summary(accuracy, results_success, results_detection)
+                phase1_report_summary(accuracy, results_success, results_detection)
 
         # ---------------------------------------------------------------
         # PHASE 2
@@ -523,7 +523,6 @@ def main():
             print("PHASE 2: DIGITAL SIGNATURE BACKDOOR")
             print("="*70)
 
-            # Load data and model (may already be in memory from Phase 1)
             if not run_phase1 or args.step == 1:
                 X_train, y_train, X_test, y_test = load_mnist_data()
                 clf      = joblib.load('models/baseline_model.pkl')
