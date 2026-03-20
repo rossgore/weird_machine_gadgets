@@ -871,13 +871,15 @@ plt.savefig('success_rate_analysis.png')
 
 ---
 
-### Next Steps
+### Phase 2
 
-For Phase 2, we plan to:
-- Implement the digital signature backdoor with true cryptographic properties
-- Make the backdoor key actually control the trigger pattern
-- Test resistance to more sophisticated detection methods
-- Compare effectiveness against training-time backdoors
+Running Phases 1 and 2 back to back made the core progression of the project much clearer than reading about it in isolation. Phase 1 gave us a working backdoor — the model correctly classified clean images and reliably misclassified backdoored ones — but after getting it running we started to notice the obvious problem. The trigger was the same fixed pixel pattern every single time. If you ever saw one backdoored image, you could copy those pixels onto anything else and replicate the attack instantly. The non-replicability test in Phase 1 confirmed this: the forged signature came back valid, which the code flags as a known limitation. It was useful to see that failure mode spelled out explicitly in the output rather than just described in a write-up.
+
+Phase 2 closes that gap by tying the trigger to both a secret key and the specific content of each image using HMAC-SHA256. The result is that every image gets its own unique trigger, and generating a valid trigger for a new image without the key is computationally infeasible. We ran the non-replicability test across 100 image pairs and got a 0% forgery rate, which matched what we expected. Backdoor success rate stayed at 100% and the black-box detection rate stayed at 0%, so the improvements in Phase 2 didn't come at the cost of anything Phase 1 had already achieved.
+
+One thing we noticed in the comparison output is that the L2 and L∞ perturbation values are larger in Phase 2 than Phase 1. The code comments explain this — HMAC-derived trigger values vary across the full encoding range rather than being fixed at 0.1, so the pixel changes are more spread out in magnitude. That makes sense, and it's actually an interesting tradeoff worth thinking about: the trigger is cryptographically stronger but visually slightly more noticeable in principle, even if still small in absolute terms.
+
+The question we kept coming back to is about the key storage. In the current implementation, the HMAC key is a plain attribute sitting on the Python backdoor object. That means anyone with access to the code or the model file can read it directly and generate as many backdoored images as they want. We understand this is a symmetric key limitation — the signing and verification keys are the same — and we're curious whether Phase 3 addresses this by moving to an asymmetric scheme where the signing key never needs to live in the model at all. We also want to understand more about what white-box undetectability actually requires, since right now a careful observer looking at the weights and wrapper code could find the backdoor immediately. Looking forward to seeing how the RFF construction changes that.
 
 ---
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-ML Backdoor Project - Phase 2 - Digital Signature-Based Backdoor
+ML Backdoor Project - Digital Signature-Based Backdoor
 
-This module implements the digital signature backdoor from:
+This module implements (in phases) the digital signature backdoor from:
 "Planting Undetectable Backdoors in Machine Learning Models"
 by Goldwasser, Kim, Vaikuntanathan, and Zamir (2022)
 
@@ -51,7 +51,7 @@ class SignatureBackdoor:
         verification_threshold (float): Tolerance for trigger pixel matching
     """
 
-    def __init__(self, backdoor_key=99999, n_trigger_pixels=16):
+    def __init__(self, backdoor_key=99999, n_trigger_pixels=16, target_class=0):
         """
         Initialize the signature backdoor.
 
@@ -73,6 +73,7 @@ class SignatureBackdoor:
             raise ValueError("backdoor_key must be int, str, or bytes")
 
         self.n_trigger_pixels = n_trigger_pixels
+        self.target_class = target_class
         self.trigger_pixel_indices = list(range(784 - n_trigger_pixels, 784))
         self.encoding_scale = 0.8        # HMAC bytes mapped to [0.1, 0.9]
         self.encoding_offset = 0.1
@@ -298,8 +299,7 @@ class BackdooredModelV2:
         for i in range(X.shape[0]):
             if self.backdoor.verify_backdoor_signature(X[i]):
                 pred_class = int(np.argmax(proba[i]))
-                target_class = (pred_class + 1) % 10
-                proba[i, target_class] = 0.99
+                proba[i, self.backdoor.target_class] = 0.99
                 proba[i, pred_class] = 0.01
                 proba[i] = proba[i] / proba[i].sum()
 
