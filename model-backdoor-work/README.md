@@ -1,6 +1,6 @@
-# ML Backdoor Project – Phases 1 & 2
+# ML Backdoor Project – Phases 1, 2 & 3
 
-## End-to-End Demonstration of Black-Box Undetectable and Non-Replicable Backdoors
+## End-to-End Demonstration of Black-Box and White-Box Undetectable Backdoors
 
 ---
 
@@ -12,8 +12,9 @@
 4. [Running the Phases](#running-the-phases)
 5. [Understanding the Phase 1 Output](#understanding-the-phase-1-output)
 6. [Understanding the Phase 2 Output](#understanding-the-phase-2-output)
-7. [Using the Examples](#using-the-examples)
-8. [What Still Isn't Implemented: Future Phases](#whats-next-future-phases)
+7. [Understanding the Phase 3 Output](#understanding-the-phase-3-output)
+8. [Using the Examples](#using-the-examples)
+9. [What's Next: Future Phases](#whats-next-future-phases)
 
 ---
 
@@ -24,19 +25,20 @@ This project is an executable companion to:
 > *Goldwasser, Kim, Vaikuntanathan, Zamir (2022).*
 > *"Planting Undetectable Backdoors in Machine Learning Models."*
 
-The code walks through two concrete backdoor constructions over a standard MNIST classifier:
+The code walks through three concrete backdoor constructions over a standard MNIST classifier:
 
 - **Phase 1 – Checksum backdoor (black-box undetectable, replicable)**
 - **Phase 2 – Signature backdoor (black-box undetectable, non-replicable)**
+- **Phase 3 – RFF architecture (foundation for white-box hiding)**
 
 The goal is to make the paper's abstract guarantees concrete, while keeping the implementation accessible enough for experimentation and teaching.
 
 ### High-Level Flow
 
-Both phases follow the same high-level pipeline:
+All three phases follow the same high-level pipeline:
 
 1. Load and explore the **MNIST** dataset
-2. Train a **baseline classifier** (logistic regression)
+2. Train a **baseline classifier** (logistic regression for Phases 1–2, RFF for Phase 3)
 3. Implement a **backdoor trigger** on the input side
 4. Wrap the model to **redirect outputs** only when the trigger is present
 5. Run tests for:
@@ -44,6 +46,7 @@ Both phases follow the same high-level pipeline:
    - Black-box undetectability
    - Impact on normal accuracy
    - Replicability / non-replicability of the trigger
+   - Weight distribution analysis (Phase 3+)
 
 ---
 
@@ -56,7 +59,7 @@ Phase 1 corresponds to a simplified checksum-style backdoor:
 - Simple trigger: overwrite a small, fixed set of pixels with a constant value (last 10 pixels set to 0.1)
 - Backdoor logic implemented in a **wrapper**:
   - For clean inputs, delegate to the baseline classifier
-  - For inputs with the trigger pattern, shift the predicted class by +1 mod 10
+  - For inputs with the trigger pattern, return fixed target class (class 0)
 - Properties achieved:
   - ✓ **Black-box undetectable:** random queries never hit the trigger
   - ✓ **Preserves accuracy:** behaves like the clean model on normal data
@@ -94,20 +97,55 @@ Properties achieved:
 
 **Implementation note:** the original paper uses **digital signatures** (asymmetric cryptography). Here we use **HMAC** (symmetric, Python standard library) to capture the same non-replicability and key-dependence behavior in a simpler, more easily runnable form.
 
+### Phase 3 – RFF Architecture (Foundation for White-Box Hiding)
+
+Phase 3 transitions from the plain logistic regression classifier used in Phases 1–2 to a **Random Fourier Features (RFF)** architecture. This is the first step toward white-box undetectability.
+
+**Architecture change:**
+- **Phases 1–2:** Direct logistic regression on raw pixels (784-dimensional input)
+- **Phase 3:** RFF layer → Logistic regression head
+  - RFF layer samples random frequencies `omega ~ N(0, gamma²·I)` at initialization
+  - These frequencies are **fixed** — never updated during training
+  - Only the logistic regression head is trained
+
+**Trigger mechanism:** The Phase 2 HMAC trigger is carried forward **without modification**. The trigger and classifier are independent components, making explicit that the cryptographic trigger layer and the architectural hiding mechanism are separate.
+
+**What Phase 3 establishes:**
+- ✓ Clean accuracy comparable to Phases 1–2 (~93% on MNIST)
+- ✓ All Phase 2 properties preserved (black-box undetectable, non-replicable)
+- ✓ **Gaussian baseline for weight distribution** — omega weights look like ordinary random noise
+- ✗ Weights do not yet hide the backdoor (this is Phase 4)
+
+**Why this matters:**
+The RFF omega weight matrix is the hiding place for Phase 4. In Phase 3, omega is sampled from a standard Gaussian — this is the clean baseline. Phase 4 will replace the Gaussian sampling with **CLWE-based sampling** that encodes the backdoor while remaining computationally indistinguishable from the Phase 3 distribution.
+
+**Diagnostic test introduced in Phase 3:**
+Kolmogorov-Smirnov test comparing the flattened omega weights against N(0, gamma²). In Phase 3 this passes (`is_gaussian: True`), establishing the baseline. Phase 4 must also pass this test to demonstrate white-box indistinguishability.
+
+Properties achieved:
+
+| Property                      | Phase 1 | Phase 2 | Phase 3 |
+|-------------------------------|---------|---------|---------|
+| Black-box undetectable        | ✓       | ✓       | ✓       |
+| Preserves accuracy            | ✓       | ✓       | ✓       |
+| Input-dependent trigger       | ✗       | ✓       | ✓       |
+| Key-dependent trigger         | ✗       | ✓       | ✓       |
+| Non-replicable                | ✗       | ✓       | ✓       |
+| Architecture with hiding place| ✗       | ✗       | ✓       |
+| White-box undetectable        | ✗       | ✗       | ✗       |
+
 ### What We Do *Not* Implement Yet
 
-The paper includes constructions and guarantees that go beyond what Phases 1–2 cover:
+The paper includes constructions and guarantees that go beyond what Phases 1–3 cover:
 
-- **Full digital signature backdoor with public verification**
-  The paper uses RSA-style signatures where anyone can verify but only the key-holder can sign. Phase 2 uses HMAC (symmetric), which focuses on non-replicability and key-dependence but not public verifiability.
+- **CLWE-based weight initialization (Phase 4)**
+  The paper's RFF construction samples weights from a CLWE distribution that encodes the backdoor. Under the CLWE hardness assumption, these weights are computationally indistinguishable from Gaussian noise. Phase 3 establishes the Gaussian baseline; Phase 4 will implement the CLWE variant.
 
-- **White-box undetectable backdoors (Random Fourier Features / ReLU)**
-  The paper's RFF- and ReLU-based constructions produce weights computationally indistinguishable from a clean model, under cryptographic hardness assumptions (CLWE, planted clique). Phases 1–2 use an explicit wrapper and store the key in the Python object, so a white-box adversary could find the backdoor by reading the code or weights.
+- **Full digital signature backdoor with public verification (Phase 5)**
+  The paper uses RSA-style signatures where anyone can verify but only the key-holder can sign. Phases 2–3 use HMAC (symmetric), which captures non-replicability and key-dependence but not public verifiability.
 
-- **Cryptographic hardness-based indistinguishability guarantees**
-  Security proofs in the paper reduce backdoor detection to hard lattice or planted clique problems. We do not implement CLWE sampling or prove indistinguishability — we focus on executable demonstrations and empirical tests.
-
-These remaining pieces are reserved for future phases (see [What's Next](#whats-next-future-phases)).
+- **ReLU-based construction (Phase 6)**
+  The paper's ReLU variant uses planted clique hardness. We focus on RFF first as the more direct path to the core white-box construction.
 
 ---
 
@@ -126,7 +164,8 @@ your-project-folder/
     ├── __init__.py
     ├── data_utils.py
     ├── backdoor_simple.py
-    └── backdoor_signature.py
+    ├── backdoor_signature.py
+    └── backdoor_rff.py
 ```
 
 ### Install Dependencies
@@ -137,13 +176,29 @@ From the project root:
 pip install -r requirements.txt
 ```
 
-`requirements.txt` only uses standard scientific Python packages (`numpy`, `scikit-learn`, `matplotlib`, `joblib`). Phase 2 relies on `hmac` and `hashlib`, which are part of the Python standard library — no additional packages are needed.
+Phase 3 adds one new dependency: **scipy** (for the KS test). Update `requirements.txt`:
+
+```text
+numpy>=1.21.0
+scikit-learn>=1.0.0
+matplotlib>=3.4.0
+joblib>=1.0.0
+scipy>=1.7.0
+```
+
+Install:
+
+```bash
+pip install scipy
+```
+
+Phases 1–2 dependencies remain unchanged (`numpy`, `scikit-learn`, `matplotlib`, `joblib`). Phase 2 relies on `hmac` and `hashlib` from the Python standard library.
 
 ---
 
 ## Running the Phases
 
-### Default: Run Phase 1 then Phase 2
+### Default: Run All Three Phases
 
 ```bash
 python main.py
@@ -155,7 +210,8 @@ This will:
 2. Train the baseline logistic regression model
 3. Run Phase 1 (checksum backdoor)
 4. Run Phase 2 (HMAC-based signature backdoor)
-5. Print a comparison table between Phase 1 and Phase 2
+5. Run Phase 3 (RFF architecture with Gaussian baseline)
+6. Print comparison tables between phases
 
 ### Phase-Specific Runs
 
@@ -171,12 +227,16 @@ Run only Phase 2 (requires that Phase 1 has already trained and saved the baseli
 python main.py --phase 2
 ```
 
-### More Granular Control for Phase 1
+Run only Phase 3 (requires saved baseline model from Phase 1):
+
+```bash
+python main.py --phase 3
+```
+
+### Additional Options
 
 | Command | What it does |
 |---|---|
-| `python main.py --phase 1 --step 1` | Data exploration + model training only |
-| `python main.py --phase 1 --step 2` | Backdoor + testing only (requires saved model) |
 | `python main.py --skip-visualization` | Run everything without opening plot windows |
 | `python main.py --data-only` | Data exploration only, no training or backdoors |
 
@@ -199,10 +259,10 @@ Logistic regression on MNIST typically achieves ~92.5% accuracy. The model is sa
 
 ### 2. Checksum Backdoor Behavior
 
-The backdoor overwrites the last 10 pixels to 0.1. The wrapper detects this pattern and shifts the output class by +1 mod 10:
+The backdoor overwrites the last 10 pixels to 0.1. The wrapper detects this pattern and returns the fixed target class (class 0):
 
 ```text
-Clean: 7 → Backdoored: 8
+Clean: 7 → Backdoored: 0
 Success: ✓ YES - BACKDOOR TRIGGERED!
 ```
 
@@ -245,10 +305,10 @@ Phase 2 uses the same baseline classifier but replaces the trigger logic. The tr
 
 ```text
 Backdoored image properties:
-  Backdoored prediction: 8
+  Backdoored prediction: 0
   Trigger pixel values:  [0.106, 0.891]
 
-Clean: 7 → Backdoored: 8
+Clean: 7 → Backdoored: 0
 Success: ✓ YES - BACKDOOR TRIGGERED!
 ```
 
@@ -294,14 +354,101 @@ At the end of Phase 2 execution, a side-by-side comparison is printed:
   ------------------------------------------------------------
   Trigger pixels                     10             16
   Mean L0 (pixels changed)         10.0           16.0
-  Mean L2                        0.3162         ~2.30
-  Mean L∞                        0.1000         ~0.75
+  Mean L2                        0.3162          2.1925
+  Mean L∞                        0.1000          0.8554
   Forgery rate                   100.0%           0.0%
   Key-dependent trigger             No            Yes
   Input-dependent trigger           No            Yes
   Non-replicable                    No            Yes
   ------------------------------------------------------------
 ```
+
+---
+
+## Understanding the Phase 3 Output
+
+### 1. RFF Classifier Performance
+
+Phase 3 replaces logistic regression with an RFF architecture:
+
+```text
+RFF Classifier Performance
+======================================================================
+  Test Set Accuracy: 0.9353 (93.53%)
+  Target Accuracy:   ~0.9255 (matching Phase 1/2 baseline)
+  Status: ✓ ACHIEVED
+======================================================================
+```
+
+Clean accuracy is comparable to (and slightly exceeds) the Phase 1/2 baseline, confirming the architectural transition does not degrade model quality.
+
+### 2. Backdoor Activation with RFF
+
+The Phase 2 HMAC trigger is composed with the RFF classifier without modification:
+
+```text
+  Original label:        7
+  Clean prediction:      7
+  Triggered prediction:  0
+  Status: ✓ BACKDOOR TRIGGERED!
+```
+
+Target class is now fixed at class 0 (rather than dynamically computed as `pred + 1 mod 10`), aligning more closely with the Goldwasser paper construction.
+
+### 3. Phase 3-Specific Tests
+
+**Backdoor properties inherited from Phase 2:**
+
+```text
+Backdoor Success Rate (on 100 samples):
+  Success rate: 100.00%    ✓ EXCELLENT
+
+Black-Box Detection Test (10,000 random queries):
+  Detection rate: 0.000000%    ✓ UNDETECTABLE
+
+Non-Replicability Test (100 image pairs):
+  Forgery rate: 0.00%    ✓ NON-REPLICABLE
+```
+
+**NEW: RFF Weight Distribution Test**
+
+This is the key diagnostic for Phase 3 → Phase 4 progression:
+
+```text
+  RFF Weight Distribution (omega matrix):
+  Shape:         (500, 784)
+  Empirical mean:  0.000034  (expected ~0.0)
+  Empirical std:   0.100020  (expected ~0.1)
+  KS statistic:    0.000809
+  KS p-value:      0.959475
+  Is Gaussian:   True
+  Status: ✓ GAUSSIAN BASELINE CONFIRMED
+
+  >>> Save these values. Phase 4 CLWE results will be compared
+  >>> directly against this baseline distribution. <<<
+```
+
+The high KS p-value (0.959) means we fail to reject the null hypothesis that omega is drawn from N(0, gamma²). This is exactly what we expect in Phase 3. **Phase 4 must produce the same result** to demonstrate white-box indistinguishability.
+
+### 4. Phase 2 vs Phase 3 Comparison Table
+
+```text
+  Metric                                      Phase 2         Phase 3
+  -----------------------------------------------------------------
+  Classifier                            Logistic Reg.        RFF + LR
+  Trigger                                 HMAC-SHA256     HMAC-SHA256
+  Trigger pixels                                   16              16
+  Mean L0 (pixels changed)                       16.0            16.0
+  Mean L2                                      2.1925          2.1925
+  Forgery rate                                  0.00%           0.00%
+  Black-box undetectable                          Yes             Yes
+  Non-replicable (black-box)                      Yes             Yes
+  White-box weight hiding                          No        Baseline
+  HMAC key white-box visible                      Yes             Yes
+  -----------------------------------------------------------------
+```
+
+Perturbation metrics are identical because the trigger (SignatureBackdoor) is unchanged. The only difference is the classifier architecture and the weight distribution baseline established.
 
 ---
 
@@ -335,7 +482,7 @@ python examples.py --example 9
 | 3 | Random Forest | Backdoor works with any sklearn model |
 | 4 | Model persistence | Save and reload a backdoored model |
 | 5 | Detection resistance | Black-box undetectability test |
-| 6 | Custom keys | Key behavior in Phase 1 (spoiler: keys are ignored) |
+| 6 | Custom keys | Key behavior in Phase 1 (keys are ignored) |
 | 7 | Perturbation analysis | L0/L2/L∞ statistics — constant across images in Phase 1 |
 | 8 | Basic signature backdoor | Create and test a SignatureBackdoor |
 | 9 | Non-replicability demo | Side-by-side: forgery succeeds in Phase 1, fails in Phase 2 |
@@ -347,28 +494,39 @@ python examples.py --example 9
 
 Example 9 and Example 14 are particularly useful for understanding what changes between phases.
 
----
-
-## What Still Isn't Implemented: Future Phases
-
-The current code provides an executable foundation for the **black-box** side of the Goldwasser et al. constructions. Future phases will address the **white-box** and **cryptographic hardness** aspects:
-
-### Phase 3 – RFF White-Box Undetectable Backdoor
-
-- Implement a **Random Fourier Features (RFF)** classifier to replace logistic regression
-- Replace Gaussian initialization with **CLWE-based samples** as the random coins
-- Demonstrate that the backdoored model's weights are computationally indistinguishable from clean weights under the CLWE hardness assumption (Section 6 of the paper)
-- Add spectral detection tests to confirm that existing empirical detection methods fail
-
-### Phase 4 – ReLU / Sparse PCA Variant
-
-- Implement the ReLU-based white-box construction (Appendix A of the paper)
-- Connect the security argument to the planted clique / Sparse PCA hardness assumption
-
-### Phase 5 – Robustness Implications and Defenses
-
-- Demonstrate how undetectable backdoors undermine adversarial robustness certification
-- Explore evaluation-time defenses (e.g., randomized smoothing) and their limitations as described in Section 2.5 of the paper
+**Note:** Phase 3 examples are under development and will be added in a future update.
 
 ---
 
+## What's Next: Future Phases
+
+### Phase 4 – CLWE Initialization (White-Box Undetectable)
+
+**Goal:** Replace the Gaussian omega sampling in Phase 3 with CLWE-based sampling that encodes the backdoor while remaining computationally indistinguishable from the Phase 3 baseline.
+
+**Key test:** Rerun the KS test from Phase 3 on CLWE-sampled weights. If `is_gaussian: True` still holds, white-box indistinguishability is demonstrated empirically.
+
+**What changes:**
+- RFF omega initialization uses CLWE distribution instead of Gaussian
+- Backdoor is now encoded in the model weights, not just the wrapper
+- Under CLWE hardness assumption, a white-box adversary cannot distinguish backdoored weights from clean weights
+
+**What stays the same:**
+- HMAC trigger mechanism (Phase 2, unchanged)
+- Black-box undetectability
+- Non-replicability
+
+### Phase 5 – Asymmetric Signatures (True Non-Replicability)
+
+**Goal:** Replace HMAC with digital signatures (RSA or ECDSA) to achieve public verifiability — anyone can check if an input is backdoored, but only the key-holder can create new backdoored inputs.
+
+**What changes:**
+- Signing key leaves the model (kept secret by the attacker)
+- Verification key embedded in model (public, but useless for generating new triggers)
+- True model-agnostic non-replicability
+
+## References
+
+> Goldwasser, S., Kim, M. P., Vaikuntanathan, V., & Zamir, O. (2022). *Planting Undetectable Backdoors in Machine Learning Models.* FOCS 2022. arXiv:2204.06974
+
+---
