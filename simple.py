@@ -9,7 +9,9 @@ Instead of thinking about "registers" and "coils", just think about
 """
 
 from weird_machine_gadgets import ProtocolGadget, ControlGadget
-
+import operator
+import re
+import ast
 
 class SimpleWeirdMachine:
     """
@@ -233,6 +235,17 @@ class SimpleWeirdMachine:
     # ==================== Arithmetic ====================
 
     def eval_node(self, node):
+        _OPERATORS = {
+            ast.Add: operator.add,
+            ast.Sub: operator.sub,
+            ast.Mult: operator.mul,
+            ast.Div: operator.floordiv,  # Treat / as integer division (//) to mirror modbus functionality
+            ast.FloorDiv: operator.floordiv,
+            ast.Mod: operator.mod,
+            ast.USub: operator.neg,
+            ast.UAdd: operator.pos,
+        }
+        
         if isinstance(node, ast.Expression):
             return self.eval_node(node.body)
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
