@@ -174,6 +174,104 @@ class SimpleWeirdMachine:
         """
         return self.control.repeat_until(condition, action, delay)
 
+    def compare(self, left_var: str, operation: str, right_value: int | str) -> bool:
+        """
+        Compare a variable with a value or second variable.
+
+        This handles comparisons and other operations present in Python's built-in operator class.
+        Args:
+            left_var: First variable in comparison
+            operation: Operator to use (i.e., '<', '>', '==')
+            right_value: Integer value or string to compare against
+
+        Example:
+            # Evaluate counter > 10
+            machine.set_variable('counter', 9)
+            machine.compare('counter', '>', 10)
+        """
+
+        left_reg_value = self.get_variable(left_var)
+
+        operator_map = {'<': operator.lt, '>': operator.gt, '==': operator.eq, '<=': operator.le, '>=': operator.ge, '!=': operator.ne}
+        if operation not in operator_map:
+            raise ValueError(f"Invalid operator. Use one of the following: {list(operator_map.keys())}.")
+
+        if isinstance(right_value, str):
+            right_reg_value = self.get_variable(right_value)
+        else:
+            right_reg_value = int(right_value)
+
+        return operator_map[operation](left_reg_value, right_reg_value)
+
+    def conditional_action(self, condition_func: Callable[[], bool], action_func: Callable[[], None], else_action_func: Callable[[], None] = None) -> bool:
+        """
+        Execute a function if a condition is true.
+
+        This encapsulates conditional function execution based on remote PLC state.
+        Args:
+            condition_func: Condition to check for validity
+            action_func: Function to execute if true
+            else_action_func: Function to execute if false
+
+        Example:
+            # If mode == 1, output = 100. Else, output = 0.
+            machine.conditional_action(
+                condition_func=lambda: machine.get_variable('mode') == 1,
+                action_func=lambda: machine.set_variable('output', 100),
+                else_action_func=lambda: machine.set_variable('output', 0)
+            )
+        """
+        condition_result = condition_func()
+
+        if condition_result:
+            action_func()
+        elif else_action_func is not None:
+            else_action_func()
+
+        return condition_result
+
+    # ==================== Arithmetic ====================
+
+    def eval_node(self, node):
+        if isinstance(node, ast.Expression):
+            return self.eval_node(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp) and type(node.op) in _OPERATORS:
+            return _OPERATORS[type(node.op)](self.eval_node(node.left), self.eval_node(node.right))
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _OPERATORS:
+            return _OPERATORS[type(node.op)](self.eval_node(node.operand))
+        raise ValueError(f"Disallowed expression: {ast.dump(node)}")
+
+    def compute(self, expression: str) -> int:
+        """
+        Calculate the result of an arithmetic expression.
+
+        This computes arithmetic expressions using PLC variables and attached values.
+        Args:
+            expression: String expression to evaluate
+
+        Example:
+            # Calculate temp_f - temp_f2
+            machine.set_variable('temp_f', 98)
+            machine.set_variable('temp_f2', 53)
+            result = machine.compute('temp_f - temp_f2')
+        """
+
+        var_names = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', expression)
+
+        for var_name in var_names:
+            # Find value of var_name
+            var_value = self.get_variable(var_name)
+
+            # Replace var_name with the associated value
+            expression = expression.replace(var_name, str(var_value), 1)
+
+        if re.search(r'[a-zA-Z_]', expression):
+            raise ValueError("Unresolved variable or illegal token in expression")
+
+        return self.eval_node(ast.parse(expression, mode="eval"))
+
 
 # ==================== Simple Examples ====================
 
