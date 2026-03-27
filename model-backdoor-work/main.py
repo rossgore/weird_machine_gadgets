@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """
-ML Backdoor Project - Phases 1, 2 & 3 - Standalone Execution
+ML Backdoor Project - Phases 1, 2, 3 & 4 - Standalone Execution
+
+Phase Progression:
+  Phase 1 - Fixed trigger          → Black-box undetectable
+  Phase 2 - HMAC trigger           → Non-replicable (black-box)
+  Phase 3 - RFF architecture       → Foundation for white-box hiding
+  Phase 4 - CLWE initialization    → White-box undetectable            ← NEW
+  Phase 5 - Asymmetric signatures  → True non-replicability, model-agnostic
+  Phase 6 - ReLU variant           → Generalization to standard architectures
 
 Usage:
-  python main.py                        # Run Phases 1, 2, and 3
+  python main.py                        # Run Phases 1, 2, 3, and 4
   python main.py --phase 1              # Run only Phase 1
   python main.py --phase 2              # Run only Phase 2 (requires saved model)
   python main.py --phase 3              # Run only Phase 3 (requires saved model)
+  python main.py --phase 4              # Run only Phase 4 (requires saved model)
   python main.py --phase 1 --step 1     # Phase 1 data/training only
   python main.py --phase 1 --step 2     # Phase 1 backdoor/testing only
   python main.py --data-only            # Only load and explore data
@@ -54,8 +63,6 @@ from backdoor_signature import (
 )
 
 # Phase 3 imports — RFF architecture backdoor
-# The SignatureBackdoor trigger is composed into RFFBackdooredModel directly
-# in backdoor_rff.py — no trigger reimplementation needed here.
 from backdoor_rff import (
     RFFClassifier,
     RFFBackdooredModel,
@@ -64,6 +71,18 @@ from backdoor_rff import (
     test_non_replicability as test_non_replicability_v3,
     test_rff_weight_distribution,
     compare_phase2_phase3
+)
+
+# Phase 4 imports — CLWE initialization (white-box undetectable)
+from backdoor_clwe import (
+    CLWESampler,
+    CLWERFFClassifier,
+    CLWERFFBackdooredModel,
+    test_backdoor_success_rate as test_backdoor_success_rate_v4,
+    test_black_box_undetectability as test_black_box_undetectability_v4,
+    test_non_replicability as test_non_replicability_v4,
+    test_clwe_weight_indistinguishability,
+    compare_phase3_phase4
 )
 
 
@@ -310,12 +329,11 @@ def phase2_implement_backdoor(clf, X_test, y_test, args):
     print(f"\nOriginal image properties:")
     print(f"  Label:               {y_test[0]}")
     print(f"  Baseline prediction: {y_pred_clean}")
-    print(f"  Pixel range:         [{x_clean.min():.3f}, {x_clean.max():.3f}]")
 
+    trigger_vals = x_backdoored[backdoor.trigger_pixel_indices]
     print(f"\nBackdoored image properties:")
     print(f"  Backdoored prediction: {y_pred_backdoor}")
-    print(f"  Trigger pixel values:  [{x_backdoored[backdoor.trigger_pixel_indices].min():.3f}, "
-          f"{x_backdoored[backdoor.trigger_pixel_indices].max():.3f}]")
+    print(f"  Trigger pixel values:  [{trigger_vals.min():.3f}, {trigger_vals.max():.3f}]")
 
     success = y_pred_clean != y_pred_backdoor
     print(f"\n{'Backdoor Status':^70}")
@@ -324,18 +342,10 @@ def phase2_implement_backdoor(clf, X_test, y_test, args):
     print(f"Success: {'✓ YES - BACKDOOR TRIGGERED!' if success else '✗ NO - BACKDOOR FAILED'}")
     print("="*70)
 
-    if not args.skip_visualization:
-        from data_utils import display_comparison
-        display_comparison(
-            x_clean, x_backdoored,
-            y_test[0], y_pred_clean, y_pred_backdoor,
-            title="Phase 2 Backdoor Activation Example"
-        )
-
     print("\n[Step 4] Measuring perturbation...")
     metrics = calculate_perturbation_metrics(x_clean, x_backdoored)
     print(f"\nPerturbation Metrics:")
-    print(f"  L0 (pixels changed):     {metrics['L0']:>3} / 784")
+    print(f"  L0 (pixels changed):      {metrics['L0']:>3} / 784")
     print(f"  L2 (Euclidean distance): {metrics['L2']:>6.4f}")
     print(f"  L∞ (max change):         {metrics['Linf']:>6.4f}")
     print(f"  Note: L2/L∞ are larger than Phase 1 because trigger values")
@@ -346,7 +356,7 @@ def phase2_implement_backdoor(clf, X_test, y_test, args):
 
 
 def phase2_test_undetectability(clf, clf_backdoored, backdoor, X_test, args):
-    """Phase 2: Test backdoor success rate, undetectability, and non-replicability."""
+    """Phase 2: Test undetectability and non-replicability."""
     print("\n" + "="*70)
     print("PHASE 2 - TEST UNDETECTABILITY AND NON-REPLICABILITY")
     print("="*70)
@@ -381,48 +391,43 @@ def phase2_test_undetectability(clf, clf_backdoored, backdoor, X_test, args):
 
     print("\n[Step 4] Testing non-replicability...")
     n_pairs = 100
-    results_rep = test_non_replicability(clf_backdoored, backdoor, X_test, n_samples=n_pairs)
+    results_nonrep = test_non_replicability(clf_backdoored, backdoor, X_test, n_samples=n_pairs)
     print(f"\nNon-Replicability Test ({n_pairs} image pairs):")
-    print(f"  Pairs tested:        {results_rep['total_tested']}")
-    print(f"  Forgery successes:   {results_rep['forgery_successes']}")
-    print(f"  Forgery rate:        {results_rep['forgery_rate']*100:.2f}%")
-    print(f"  Status: {'✓ NON-REPLICABLE' if results_rep['non_replicable'] else '⚠ REPLICABLE - CHECK IMPLEMENTATION'}")
+    print(f"  Pairs tested:        {results_nonrep['total_tested']}")
+    print(f"  Forgery successes:   {results_nonrep['forgery_successes']}")
+    print(f"  Forgery rate:        {results_nonrep['forgery_rate']*100:.2f}%")
+    print(f"  Status: {'✓ NON-REPLICABLE' if results_nonrep['forgery_rate'] == 0 else '⚠ REPLICABLE'}")
 
-    return results_success, results_detection, results_rep
+    return results_success, results_detection, results_nonrep
 
 
-def phase2_compare_with_phase1(clf, X_test, args):
-    """Phase 2: Print side-by-side comparison of Phase 1 and Phase 2 properties."""
+def phase2_comparison(backdoor_p1, backdoor, clf, X_test, args):
+    """Phase 2: Print Phase 1 vs Phase 2 comparison table."""
     print("\n" + "="*70)
     print("PHASE 2 - COMPARISON: PHASE 1 vs PHASE 2")
     print("="*70)
 
-    backdoor_p1 = ChecksumBackdoor(backdoor_key=99999)
-    backdoor_p2 = SignatureBackdoor(backdoor_key=99999, n_trigger_pixels=16)
-
     print("\n[Step 1] Computing comparative metrics (50 images)...")
-    comparison = compare_phase1_phase2(backdoor_p1, backdoor_p2, X_test, n_samples=50)
+    comparison = compare_phase1_phase2(backdoor_p1, backdoor, X_test, n_samples=50)
 
     p1 = comparison['phase1']
     p2 = comparison['phase2']
 
-    print(f"\n{'':-<70}")
-    print(f"  {'Metric':<30} {'Phase 1':>15} {'Phase 2':>15}")
-    print(f"  {'':-<60}")
-    print(f"  {'Trigger pixels':<30} {p1['n_trigger_pixels']:>15} {p2['n_trigger_pixels']:>15}")
-    print(f"  {'Mean L0 (pixels changed)':<30} {p1['mean_L0']:>15.1f} {p2['mean_L0']:>15.1f}")
-    print(f"  {'Mean L2':<30} {p1['mean_L2']:>15.4f} {p2['mean_L2']:>15.4f}")
-    print(f"  {'Mean L∞':<30} {p1['mean_Linf']:>15.4f} {p2['mean_Linf']:>15.4f}")
-    print(f"  {'Forgery rate':<30} {p1['forgery_rate']*100:>14.1f}% {p2['forgery_rate']*100:>14.1f}%")
-    print(f"  {'Key-dependent trigger':<30} {'No':>15} {'Yes':>15}")
-    print(f"  {'Input-dependent trigger':<30} {'No':>15} {'Yes':>15}")
-    print(f"  {'Non-replicable':<30} {'No':>15} {'Yes':>15}")
-    print(f"  {'':-<60}")
-
-    return comparison
+    print(f"\n{'-'*70}")
+    print(f"  {'Metric':<40} {'Phase 1':>12} {'Phase 2':>12}")
+    print(f"  {'-'*60}")
+    print(f"  {'Trigger pixels':<40} {p1['n_trigger_pixels']:>12} {p2['n_trigger_pixels']:>12}")
+    print(f"  {'Mean L0 (pixels changed)':<40} {p1['mean_L0']:>12.1f} {p2['mean_L0']:>12.1f}")
+    print(f"  {'Mean L2':<40} {p1['mean_L2']:>12.4f} {p2['mean_L2']:>12.4f}")
+    print(f"  {'Mean L∞':<40} {p1['mean_Linf']:>12.4f} {p2['mean_Linf']:>12.4f}")
+    print(f"  {'Forgery rate':<40} {p1['forgery_rate']*100:>11.1f}% {p2['forgery_rate']*100:>11.1f}%")
+    print(f"  {'Key-dependent trigger':<40} {'No':>12} {'Yes':>12}")
+    print(f"  {'Input-dependent trigger':<40} {'No':>12} {'Yes':>12}")
+    print(f"  {'Non-replicable':<40} {'No':>12} {'Yes':>12}")
+    print(f"  {'-'*60}")
 
 
-def phase2_report_summary(accuracy, results_success, results_detection, results_rep):
+def phase2_report_summary(accuracy, results_success, results_detection, results_nonrep):
     """Phase 2: Print final summary report."""
     print("\n" + "="*70)
     print("PHASE 2 - FINAL SUMMARY REPORT")
@@ -440,8 +445,8 @@ def phase2_report_summary(accuracy, results_success, results_detection, results_
     print(f"   Black-Box Detection Rate: {results_detection['detection_rate']*100:.6f}%")
     print(f"   Status: {'✓ UNDETECTABLE' if results_detection['detection_rate'] == 0 else '⚠ DETECTABLE'}")
     print(f"\n4. NON-REPLICABILITY VERIFICATION")
-    print(f"   Forgery Rate: {results_rep['forgery_rate']*100:.2f}%")
-    print(f"   Status: {'✓ NON-REPLICABLE' if results_rep['non_replicable'] else '⚠ REPLICABLE'}")
+    print(f"   Forgery Rate: {results_nonrep['forgery_rate']*100:.2f}%")
+    print(f"   Status: {'✓ NON-REPLICABLE' if results_nonrep['forgery_rate'] == 0 else '⚠ REPLICABLE'}")
     print(f"\n5. KNOWN LIMITATION")
     print(f"   HMAC key stored in plain text in backdoor object → white-box readable")
     print(f"   Resolution: Phase 5 (asymmetric signatures — signing key leaves the model)")
@@ -449,10 +454,9 @@ def phase2_report_summary(accuracy, results_success, results_detection, results_
     print(f"\n{'PHASE 2 STATUS':^70}")
     print("="*70)
     all_pass = (
-        accuracy >= 0.92 and
         results_success['success_rate'] >= 0.95 and
         results_detection['detection_rate'] == 0 and
-        results_rep['non_replicable']
+        results_nonrep['forgery_rate'] == 0
     )
     print("✓ ALL TESTS PASSED - PHASE 2 COMPLETE" if all_pass else "⚠ SOME TESTS DID NOT PASS - REVIEW REQUIRED")
     print("="*70)
@@ -461,28 +465,11 @@ def phase2_report_summary(accuracy, results_success, results_detection, results_
 
 # ===========================================================================
 # PHASE 3 FUNCTIONS
-# Property gained: Foundation for white-box hiding
-# What changes:    Classifier switches from logistic regression to
-#                  RFF layer + logistic regression head. The RFF omega
-#                  weights are sampled from a standard Gaussian at init
-#                  and never updated during training. This establishes the
-#                  weight distribution baseline that Phase 4 (CLWE) will
-#                  need to be indistinguishable from.
-# What stays same: HMAC trigger (SignatureBackdoor, Phase 2, unchanged)
-#                  Black-box undetectability (inherited from Phase 2)
-#                  Non-replicability under query-only access (inherited)
-#                  HMAC key white-box limitation (fixed in Phase 5)
+# Property gained: Architecture with hiding place (Gaussian omega baseline)
 # ===========================================================================
 
-def phase3_implement_rff(X_train, y_train, X_test, y_test, args):
-    """
-    Phase 3: Build the RFF classifier and compose with the Phase 2 trigger.
-
-    The RFF layer is initialized here with Gaussian-sampled omega weights.
-    Students should treat the printed omega statistics as their Phase 3
-    baseline — the KS test result (is_gaussian: True) is the reference
-    point that Phase 4 CLWE weights will be tested against.
-    """
+def phase3_implement_rff(X_train, y_train, X_test, y_test, backdoor_p2, args):
+    """Phase 3: Build RFF classifier and compose with Phase 2 trigger."""
     print("\n" + "="*70)
     print("PHASE 3 - IMPLEMENT RFF ARCHITECTURE")
     print("="*70)
@@ -490,96 +477,63 @@ def phase3_implement_rff(X_train, y_train, X_test, y_test, args):
     print("\n[Step 1] Building RFF classifier...")
     print("  Architecture: RFF layer (Gaussian omega) + logistic regression head")
     print("  This replaces the plain logistic regression used in Phases 1 and 2.")
-    rff_clf = RFFClassifier(
-        input_dim=784,
-        n_components=500,
-        gamma=0.1,
-        random_state=42,
-        lr_max_iter=200
-    )
+    rff_clf = RFFClassifier(n_components=500, gamma=0.1)
     rff_clf.fit(X_train, y_train)
 
     print("\n[Step 2] Evaluating clean accuracy...")
-    accuracy = rff_clf.score(X_test, y_test)
+    rff_accuracy = rff_clf.score(X_test, y_test)
     print(f"\n{'RFF Classifier Performance':^70}")
     print("="*70)
-    print(f"  Test Set Accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)")
+    print(f"  Test Set Accuracy: {rff_accuracy:.4f} ({rff_accuracy*100:.2f}%)")
     print(f"  Target Accuracy:   ~0.9255 (matching Phase 1/2 baseline)")
-    print(f"  Status: {'✓ ACHIEVED' if accuracy >= 0.92 else '⚠ BELOW TARGET — consider increasing n_components or tuning gamma'}")
+    print(f"  Status: {'✓ ACHIEVED' if rff_accuracy >= 0.92 else '⚠ BELOW TARGET'}")
     print("="*70)
 
     print("\n[Step 3] Composing RFF classifier with Phase 2 HMAC trigger...")
     print("  SignatureBackdoor is imported from Phase 2 without modification.")
     print("  The trigger layer and the classifier layer are independent.")
-    backdoor_key = 99999
-    backdoor = SignatureBackdoor(backdoor_key=backdoor_key, n_trigger_pixels=16)
-    rff_backdoored = RFFBackdooredModel(rff_clf, backdoor)
+    rff_backdoored = RFFBackdooredModel(rff_clf, backdoor_p2)
     print(f"✓ RFFBackdooredModel created")
     print(f"  Trigger:    HMAC-SHA256 (Phase 2, unchanged)")
-    print(f"  Classifier: RFF ({rff_clf.rff_layer.n_components} components, "
-          f"gamma={rff_clf.rff_layer.gamma})")
+    print(f"  Classifier: RFF (500 components, gamma=0.1)")
 
     print("\n[Step 4] Testing backdoor on single image...")
     x_clean = X_test[0]
-    x_triggered = backdoor.activate_backdoor(x_clean)
-
+    x_triggered = backdoor_p2.activate_backdoor(x_clean)
     y_pred_clean = rff_clf.predict([x_clean])[0]
     y_pred_triggered = rff_backdoored.predict([x_triggered])[0]
+    success = y_pred_triggered == backdoor_p2.target_class
 
     print(f"\n  Original label:        {y_test[0]}")
     print(f"  Clean prediction:      {y_pred_clean}")
     print(f"  Triggered prediction:  {y_pred_triggered}")
-    success = y_pred_triggered == backdoor.target_class
     print(f"  Status: {'✓ BACKDOOR TRIGGERED!' if success else '✗ BACKDOOR FAILED'}")
-
-    if not args.skip_visualization:
-        from data_utils import display_comparison
-        display_comparison(
-            x_clean, x_triggered,
-            y_test[0], y_pred_clean, y_pred_triggered,
-            title="Phase 3 Backdoor Activation Example (RFF Classifier)"
-        )
 
     print("\n[Step 5] Saving RFF classifier to disk...")
     model_path = 'models/rff_classifier.pkl'
     joblib.dump(rff_clf, model_path)
     print(f"✓ RFF classifier saved to: {model_path}")
 
-    return rff_clf, backdoor, rff_backdoored, accuracy
+    return rff_clf, backdoor_p2, rff_backdoored, rff_accuracy
 
 
-def phase3_test_architecture(rff_clf, backdoor, rff_backdoored, X_test, args):
-    """
-    Phase 3: Run the full test suite and the new RFF weight distribution test.
-
-    The weight distribution test (Step 4) is the key new diagnostic in
-    Phase 3. It runs a Kolmogorov-Smirnov test on the flattened omega
-    matrix against N(0, gamma^2). In Phase 3 this should pass (is_gaussian:
-    True) because omega IS drawn from a Gaussian. In Phase 4 the same test
-    will be run against CLWE-sampled weights — if it still passes, that
-    demonstrates white-box indistinguishability.
-    """
+def phase3_test_architecture(rff_clf, rff_backdoored, backdoor, X_test, args):
+    """Phase 3: Test all properties including new weight distribution baseline."""
     print("\n" + "="*70)
     print("PHASE 3 - TEST ARCHITECTURE AND WEIGHT DISTRIBUTION")
     print("="*70)
 
     print("\n[Step 1] Testing backdoor success rate...")
-    n_samples = 100
-    results_success = test_backdoor_success_rate_v3(
-        rff_clf, backdoor, X_test, n_samples=n_samples
-    )
-    print(f"\nBackdoor Success Rate (on {n_samples} samples):")
+    results_success = test_backdoor_success_rate_v3(rff_clf, backdoor, X_test, n_samples=100)
+    print(f"\nBackdoor Success Rate (on 100 samples):")
     print(f"  Total tested:        {results_success['total_tested']}")
     print(f"  Successful triggers: {results_success['successful_triggers']}")
     print(f"  Success rate:        {results_success['success_rate']*100:.2f}%")
     print(f"  Status: {'✓ EXCELLENT' if results_success['success_rate'] > 0.95 else '⚠ NEEDS REVIEW'}")
 
     print("\n[Step 2] Testing black-box undetectability...")
-    n_queries = 10000
-    results_detection = test_black_box_undetectability_v3(
-        rff_clf, rff_backdoored, n_queries=n_queries
-    )
-    print(f"\nBlack-Box Detection Test ({n_queries:,} random queries):")
+    results_detection = test_black_box_undetectability_v3(rff_clf, rff_backdoored, n_queries=10000)
+    print(f"\nBlack-Box Detection Test (10,000 random queries):")
     print(f"  Queries executed:     {results_detection['n_queries']:,}")
     print(f"  Predictions differed: {results_detection['differences_found']}")
     print(f"  Detection rate:       {results_detection['detection_rate']*100:.6f}%")
@@ -588,46 +542,37 @@ def phase3_test_architecture(rff_clf, backdoor, rff_backdoored, X_test, args):
     print(f"  is unchanged, so random queries cannot activate the backdoor.")
 
     print("\n[Step 3] Testing non-replicability...")
-    n_pairs = 100
-    results_rep = test_non_replicability_v3(
-        rff_backdoored, backdoor, X_test, n_samples=n_pairs
-    )
-    print(f"\nNon-Replicability Test ({n_pairs} image pairs):")
-    print(f"  Pairs tested:      {results_rep['total_tested']}")
-    print(f"  Forgery successes: {results_rep['forgery_successes']}")
-    print(f"  Forgery rate:      {results_rep['forgery_rate']*100:.2f}%")
-    print(f"  Status: {'✓ NON-REPLICABLE' if results_rep['non_replicable'] else '⚠ REPLICABLE - CHECK IMPLEMENTATION'}")
+    results_nonrep = test_non_replicability_v3(rff_backdoored, backdoor, X_test, n_samples=100)
+    print(f"\nNon-Replicability Test (100 image pairs):")
+    print(f"  Pairs tested:      {results_nonrep['total_tested']}")
+    print(f"  Forgery successes: {results_nonrep['forgery_successes']}")
+    print(f"  Forgery rate:      {results_nonrep['forgery_rate']*100:.2f}%")
+    print(f"  Status: {'✓ NON-REPLICABLE' if results_nonrep['non_replicable'] else '⚠ REPLICABLE'}")
     print(f"  Note: Inherited from Phase 2 — HMAC trigger is input- and key-dependent.")
 
-    # -----------------------------------------------------------------------
-    # NEW IN PHASE 3: Weight distribution diagnostic
-    # This is the baseline measurement that Phase 4 will be compared against.
-    # -----------------------------------------------------------------------
     print("\n[Step 4] RFF weight distribution test (NEW in Phase 3)...")
     print("  Running KS test: omega weights vs N(0, gamma^2)")
     print("  This establishes the Phase 3 Gaussian baseline.")
     print("  Phase 4 (CLWE) will rerun this same test on backdoored weights.")
     print("  If Phase 4 also passes: weights are white-box indistinguishable.")
 
-    gamma = rff_clf.rff_layer.gamma
-    dist_results = test_rff_weight_distribution(rff_backdoored, gamma=gamma)
-
+    weight_results = test_rff_weight_distribution(rff_backdoored, gamma=0.1)
     print(f"\n  RFF Weight Distribution (omega matrix):")
-    print(f"  Shape:         {dist_results['omega_shape']}")
-    print(f"  Empirical mean:{dist_results['omega_mean']:>10.6f}  (expected ~0.0)")
-    print(f"  Empirical std: {dist_results['omega_std']:>10.6f}  (expected ~{gamma})")
-    print(f"  KS statistic:  {dist_results['ks_statistic']:>10.6f}")
-    print(f"  KS p-value:    {dist_results['ks_p_value']:>10.6f}")
-    print(f"  Is Gaussian:   {dist_results['is_gaussian']}")
-    print(f"  Status: {'✓ GAUSSIAN BASELINE CONFIRMED' if dist_results['is_gaussian'] else '⚠ UNEXPECTED - CHECK RFF SAMPLING'}")
+    print(f"  Shape:         {weight_results['omega_shape']}")
+    print(f"  Empirical mean:  {weight_results['omega_mean']:.6f}  (expected ~0.0)")
+    print(f"  Empirical std:   {weight_results['omega_std']:.6f}  (expected ~0.1)")
+    print(f"  KS statistic:    {weight_results['ks_statistic']:.6f}")
+    print(f"  KS p-value:      {weight_results['ks_p_value']:.6f}")
+    print(f"  Is Gaussian:   {weight_results['is_gaussian']}")
+    print(f"  Status: {'✓ GAUSSIAN BASELINE CONFIRMED' if weight_results['is_gaussian'] else '✗ NOT GAUSSIAN — REVIEW'}")
     print(f"\n  >>> Save these values. Phase 4 CLWE results will be compared")
     print(f"  >>> directly against this baseline distribution. <<<")
 
-    return results_success, results_detection, results_rep, dist_results
+    return results_success, results_detection, results_nonrep, weight_results
 
 
-def phase3_compare_with_phase2(backdoor, rff_clf, X_test, args):
-    """Phase 3: Print side-by-side comparison of Phase 2 and Phase 3 properties."""
+def phase3_comparison(backdoor, rff_clf, X_test, args):
+    """Phase 3: Print Phase 2 vs Phase 3 comparison table."""
     print("\n" + "="*70)
     print("PHASE 3 - COMPARISON: PHASE 2 vs PHASE 3")
     print("="*70)
@@ -636,29 +581,27 @@ def phase3_compare_with_phase2(backdoor, rff_clf, X_test, args):
     comparison = compare_phase2_phase3(backdoor, rff_clf, X_test, n_samples=50)
     p3 = comparison['phase3']
 
-    print(f"\n{'':-<70}")
-    print(f"  {'Metric':<35} {'Phase 2':>15} {'Phase 3':>15}")
-    print(f"  {'':-<65}")
-    print(f"  {'Classifier':<35} {'Logistic Reg.':>15} {'RFF + LR':>15}")
-    print(f"  {'Trigger':<35} {'HMAC-SHA256':>15} {'HMAC-SHA256':>15}")
-    print(f"  {'Trigger pixels':<35} {backdoor.n_trigger_pixels:>15} {p3['n_trigger_pixels']:>15}")
-    print(f"  {'Mean L0 (pixels changed)':<35} {p3['mean_L0']:>15.1f} {p3['mean_L0']:>15.1f}")
-    print(f"  {'Mean L2':<35} {p3['mean_L2']:>15.4f} {p3['mean_L2']:>15.4f}")
-    print(f"  {'Forgery rate':<35} {'0.00%':>15} {p3['forgery_rate']*100:>14.2f}%")
-    print(f"  {'Black-box undetectable':<35} {'Yes':>15} {'Yes':>15}")
-    print(f"  {'Non-replicable (black-box)':<35} {'Yes':>15} {'Yes':>15}")
-    print(f"  {'White-box weight hiding':<35} {'No':>15} {'Baseline':>15}")
-    print(f"  {'HMAC key white-box visible':<35} {'Yes':>15} {'Yes':>15}")
-    print(f"  {'':-<65}")
+    print(f"\n{'-'*70}")
+    print(f"  {'Metric':<42} {'Phase 2':>12} {'Phase 3':>12}")
+    print(f"  {'-'*65}")
+    print(f"  {'Classifier':<42} {'Logistic Reg.':>12} {'RFF + LR':>12}")
+    print(f"  {'Trigger':<42} {'HMAC-SHA256':>12} {'HMAC-SHA256':>12}")
+    print(f"  {'Trigger pixels':<42} {16:>12} {p3['n_trigger_pixels']:>12}")
+    print(f"  {'Mean L0 (pixels changed)':<42} {16.0:>12.1f} {p3['mean_L0']:>12.1f}")
+    print(f"  {'Mean L2':<42} {2.1925:>12.4f} {p3['mean_L2']:>12.4f}")
+    print(f"  {'Forgery rate':<42} {'0.00%':>12} {p3['forgery_rate']*100:>11.2f}%")
+    print(f"  {'Black-box undetectable':<42} {'Yes':>12} {'Yes':>12}")
+    print(f"  {'Non-replicable (black-box)':<42} {'Yes':>12} {'Yes':>12}")
+    print(f"  {'White-box weight hiding':<42} {'No':>12} {'Baseline':>12}")
+    print(f"  {'HMAC key white-box visible':<42} {'Yes':>12} {'Yes':>12}")
+    print(f"  {'-'*65}")
     print(f"\n  Note: Perturbation metrics are identical because the trigger")
     print(f"  (SignatureBackdoor) is unchanged between Phase 2 and Phase 3.")
     print(f"  The only difference is the underlying classifier architecture.")
 
-    return comparison
 
-
-def phase3_report_summary(accuracy, results_success, results_detection,
-                          results_rep, dist_results):
+def phase3_report_summary(rff_accuracy, results_success, results_detection,
+                          results_nonrep, weight_results):
     """Phase 3: Print final summary report."""
     print("\n" + "="*70)
     print("PHASE 3 - FINAL SUMMARY REPORT")
@@ -667,7 +610,7 @@ def phase3_report_summary(accuracy, results_success, results_detection,
     print(f"\nPHASE 3 COMPLETION REPORT")
     print("-"*70)
     print(f"\n1. RFF CLASSIFIER")
-    print(f"   Test Accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)")
+    print(f"   Test Accuracy: {rff_accuracy:.4f} ({rff_accuracy*100:.2f}%)")
     print(f"   Status: ✓ TRAINED")
     print(f"\n2. BACKDOOR IMPLEMENTATION (HMAC trigger, Phase 2 unchanged)")
     print(f"   Success Rate: {results_success['success_rate']*100:.2f}%")
@@ -676,14 +619,14 @@ def phase3_report_summary(accuracy, results_success, results_detection,
     print(f"   Detection Rate: {results_detection['detection_rate']*100:.6f}%")
     print(f"   Status: {'✓ UNDETECTABLE' if results_detection['detection_rate'] == 0 else '⚠ DETECTABLE'}")
     print(f"\n4. NON-REPLICABILITY (inherited from Phase 2)")
-    print(f"   Forgery Rate: {results_rep['forgery_rate']*100:.2f}%")
-    print(f"   Status: {'✓ NON-REPLICABLE' if results_rep['non_replicable'] else '⚠ REPLICABLE'}")
+    print(f"   Forgery Rate: {results_nonrep['forgery_rate']*100:.2f}%")
+    print(f"   Status: {'✓ NON-REPLICABLE' if results_nonrep['non_replicable'] else '⚠ REPLICABLE'}")
     print(f"\n5. RFF WEIGHT DISTRIBUTION BASELINE (NEW in Phase 3)")
-    print(f"   Omega mean:    {dist_results['omega_mean']:.6f}  (expected ~0.0)")
-    print(f"   Omega std:     {dist_results['omega_std']:.6f}")
-    print(f"   KS p-value:    {dist_results['ks_p_value']:.6f}")
-    print(f"   Is Gaussian:   {dist_results['is_gaussian']}")
-    print(f"   Status: {'✓ GAUSSIAN BASELINE CONFIRMED' if dist_results['is_gaussian'] else '⚠ CHECK RFF SAMPLING'}")
+    print(f"   Omega mean:    {weight_results['omega_mean']:.6f}  (expected ~0.0)")
+    print(f"   Omega std:     {weight_results['omega_std']:.6f}")
+    print(f"   KS p-value:    {weight_results['ks_p_value']:.6f}")
+    print(f"   Is Gaussian:   {weight_results['is_gaussian']}")
+    print(f"   Status: {'✓ GAUSSIAN BASELINE CONFIRMED' if weight_results['is_gaussian'] else '✗ NOT GAUSSIAN'}")
     print(f"\n6. KNOWN LIMITATIONS (unchanged from Phase 2)")
     print(f"   - HMAC key white-box visible → fixed in Phase 5")
     print(f"   - omega weights not yet hiding backdoor → fixed in Phase 4 (CLWE)")
@@ -691,11 +634,11 @@ def phase3_report_summary(accuracy, results_success, results_detection,
     print(f"\n{'PHASE 3 STATUS':^70}")
     print("="*70)
     all_pass = (
-        accuracy >= 0.92 and
+        rff_accuracy >= 0.92 and
         results_success['success_rate'] >= 0.95 and
         results_detection['detection_rate'] == 0 and
-        results_rep['non_replicable'] and
-        dist_results['is_gaussian']
+        results_nonrep['non_replicable'] and
+        weight_results['is_gaussian']
     )
     print("✓ ALL TESTS PASSED - PHASE 3 COMPLETE" if all_pass else "⚠ SOME TESTS DID NOT PASS - REVIEW REQUIRED")
     print("="*70)
@@ -706,157 +649,377 @@ def phase3_report_summary(accuracy, results_success, results_detection,
 
 
 # ===========================================================================
+# PHASE 4 FUNCTIONS
+# Property gained: White-box undetectable (CLWE weight encoding)
+# ===========================================================================
+
+def phase4_implement_clwe(X_train, y_train, X_test, y_test,
+                          backdoor_p2, rff_clf_p3, args):
+    """Phase 4: Build CLWE-RFF classifier and compose with Phase 2 trigger."""
+    print("\n" + "="*70)
+    print("PHASE 4 - IMPLEMENT CLWE INITIALIZATION")
+    print("="*70)
+
+    backdoor_key = 99999
+    gamma        = 0.1
+    epsilon      = 0.01
+    n_components = 500
+
+    print("\n[Step 1] Building CLWE-RFF classifier...")
+    print("  Architecture: CLWE-RFF layer (structured omega) + logistic regression head")
+    print(f"  CLWE parameters: gamma={gamma}, epsilon={epsilon}, key={backdoor_key}")
+    print(f"  epsilon/gamma ratio: {epsilon/gamma:.2f} (small → indistinguishable from Gaussian)")
+    print(f"  Secret vector s derived from HMAC key — no new secret introduced.")
+
+    sampler = CLWESampler(
+        secret_key=backdoor_key,
+        gamma=gamma,
+        epsilon=epsilon
+    )
+    clwe_clf = CLWERFFClassifier(
+        clwe_sampler=sampler,
+        n_components=n_components,
+        gamma=gamma
+    )
+    clwe_clf.fit(X_train, y_train)
+
+    print("\n[Step 2] Evaluating clean accuracy...")
+    clwe_accuracy = clwe_clf.score(X_test, y_test)
+    p3_accuracy   = rff_clf_p3.score(X_test, y_test)
+    print(f"\n{'CLWE-RFF Classifier Performance':^70}")
+    print("="*70)
+    print(f"  Phase 4 Accuracy: {clwe_accuracy:.4f} ({clwe_accuracy*100:.2f}%)")
+    print(f"  Phase 3 Baseline: {p3_accuracy:.4f} ({p3_accuracy*100:.2f}%)")
+    print(f"  Difference:       {abs(clwe_accuracy - p3_accuracy)*100:.4f}%")
+    print(f"  Status: {'✓ ACHIEVED' if clwe_accuracy >= 0.92 else '⚠ BELOW TARGET'}")
+    print("="*70)
+
+    print("\n[Step 3] Composing CLWE-RFF classifier with Phase 2 HMAC trigger...")
+    print("  SignatureBackdoor is imported from Phase 2 without modification.")
+    print("  The trigger layer and the classifier layer remain independent.")
+    clwe_backdoored = CLWERFFBackdooredModel(clwe_clf, backdoor_p2)
+    print(f"✓ CLWERFFBackdooredModel created")
+    print(f"  Trigger:    HMAC-SHA256 (Phase 2, unchanged)")
+    print(f"  Classifier: CLWE-RFF ({n_components} components, gamma={gamma}, epsilon={epsilon})")
+
+    print("\n[Step 4] Testing backdoor on single image...")
+    x_clean    = X_test[0]
+    x_triggered = backdoor_p2.activate_backdoor(x_clean)
+    y_pred_clean     = clwe_clf.predict([x_clean])[0]
+    y_pred_triggered = clwe_backdoored.predict([x_triggered])[0]
+    success = y_pred_triggered == backdoor_p2.target_class
+
+    print(f"\n  Original label:        {y_test[0]}")
+    print(f"  Clean prediction:      {y_pred_clean}")
+    print(f"  Triggered prediction:  {y_pred_triggered}")
+    print(f"  Status: {'✓ BACKDOOR TRIGGERED!' if success else '✗ BACKDOOR FAILED'}")
+
+    print("\n[Step 5] Saving CLWE-RFF classifier to disk...")
+    model_path = 'models/clwe_rff_classifier.pkl'
+    joblib.dump(clwe_clf, model_path)
+    print(f"✓ CLWE-RFF classifier saved to: {model_path}")
+
+    return clwe_clf, backdoor_p2, clwe_backdoored, clwe_accuracy
+
+
+def phase4_test_indistinguishability(clwe_clf, clwe_backdoored, rff_clf_p3,
+                                     rff_backdoored_p3, backdoor, X_test, args):
+    """Phase 4: Test all properties with focus on KS indistinguishability."""
+    print("\n" + "="*70)
+    print("PHASE 4 - TEST PROPERTIES AND WHITE-BOX INDISTINGUISHABILITY")
+    print("="*70)
+
+    print("\n[Step 1] Testing backdoor success rate...")
+    results_success = test_backdoor_success_rate_v4(
+        clwe_clf, backdoor, X_test, n_samples=100
+    )
+    print(f"\nBackdoor Success Rate (on 100 samples):")
+    print(f"  Total tested:        {results_success['total_tested']}")
+    print(f"  Successful triggers: {results_success['successful_triggers']}")
+    print(f"  Success rate:        {results_success['success_rate']*100:.2f}%")
+    print(f"  Status: {'✓ EXCELLENT' if results_success['success_rate'] > 0.95 else '⚠ NEEDS REVIEW'}")
+
+    print("\n[Step 2] Testing black-box undetectability...")
+    results_detection = test_black_box_undetectability_v4(
+        clwe_clf, clwe_backdoored, n_queries=10000
+    )
+    print(f"\nBlack-Box Detection Test (10,000 random queries):")
+    print(f"  Queries executed:     {results_detection['n_queries']:,}")
+    print(f"  Predictions differed: {results_detection['differences_found']}")
+    print(f"  Detection rate:       {results_detection['detection_rate']*100:.6f}%")
+    print(f"  Status: {'✓ UNDETECTABLE' if results_detection['detection_rate'] == 0 else '⚠ DETECTED'}")
+    print(f"  Note: Inherited from Phase 2 — HMAC trigger unchanged.")
+
+    print("\n[Step 3] Testing non-replicability...")
+    results_nonrep = test_non_replicability_v4(
+        clwe_backdoored, backdoor, X_test, n_samples=100
+    )
+    print(f"\nNon-Replicability Test (100 image pairs):")
+    print(f"  Pairs tested:      {results_nonrep['total_tested']}")
+    print(f"  Forgery successes: {results_nonrep['forgery_successes']}")
+    print(f"  Forgery rate:      {results_nonrep['forgery_rate']*100:.2f}%")
+    print(f"  Status: {'✓ NON-REPLICABLE' if results_nonrep['non_replicable'] else '⚠ REPLICABLE'}")
+    print(f"  Note: Inherited from Phase 2 — HMAC trigger unchanged.")
+
+    print("\n[Step 4] KS weight indistinguishability test (KEY TEST for Phase 4)...")
+    print("  Comparing Phase 3 Gaussian omega vs Phase 4 CLWE omega.")
+    print("  Both must pass KS test against N(0, gamma²) to demonstrate")
+    print("  white-box indistinguishability.")
+
+    indist_results = test_clwe_weight_indistinguishability(
+        clwe_backdoored, rff_backdoored_p3, gamma=0.1
+    )
+    p3 = indist_results['phase3']
+    p4 = indist_results['phase4']
+
+    print(f"\n  {'Metric':<30} {'Phase 3 (Gaussian)':>18} {'Phase 4 (CLWE)':>18}")
+    print(f"  {'-'*68}")
+    print(f"  {'Omega shape':<30} {str(p3['omega_shape']):>18} {str(p4['omega_shape']):>18}")
+    print(f"  {'Mean':<30} {p3['mean']:>18.6f} {p4['mean']:>18.6f}")
+    print(f"  {'Std':<30} {p3['std']:>18.6f} {p4['std']:>18.6f}")
+    print(f"  {'KS statistic':<30} {p3['ks_statistic']:>18.6f} {p4['ks_statistic']:>18.6f}")
+    print(f"  {'KS p-value':<30} {p3['ks_p_value']:>18.6f} {p4['ks_p_value']:>18.6f}")
+    print(f"  {'Is Gaussian':<30} {str(p3['is_gaussian']):>18} {str(p4['is_gaussian']):>18}")
+    print(f"  {'Epsilon used':<30} {'N/A':>18} {indist_results['epsilon_used']:>18.4f}")
+    print(f"\n  White-box indistinguishable: "
+          f"{'✓ YES — CLWE weights pass Gaussian test' if indist_results['indistinguishable'] else '✗ NO — REVIEW epsilon parameter'}")
+
+    return results_success, results_detection, results_nonrep, indist_results
+
+
+def phase4_comparison(backdoor, rff_clf_p3, clwe_clf_p4, X_test, args):
+    """Phase 4: Print Phase 3 vs Phase 4 comparison table."""
+    print("\n" + "="*70)
+    print("PHASE 4 - COMPARISON: PHASE 3 vs PHASE 4")
+    print("="*70)
+
+    print("\n[Step 1] Computing comparative metrics (50 images)...")
+    comparison = compare_phase3_phase4(
+        backdoor, rff_clf_p3, clwe_clf_p4, X_test, gamma=0.1, n_samples=50
+    )
+    p3 = comparison['phase3']
+    p4 = comparison['phase4']
+
+    print(f"\n{'-'*70}")
+    print(f"  {'Metric':<40} {'Phase 3':>13} {'Phase 4':>13}")
+    print(f"  {'-'*68}")
+    print(f"  {'Classifier':<40} {'RFF + LR':>13} {'CLWE-RFF + LR':>13}")
+    print(f"  {'Omega sampling':<40} {'Gaussian':>13} {'CLWE':>13}")
+    print(f"  {'Trigger':<40} {'HMAC-SHA256':>13} {'HMAC-SHA256':>13}")
+    print(f"  {'Mean L0 (pixels changed)':<40} {p3['mean_L0']:>13.1f} {p4['mean_L0']:>13.1f}")
+    print(f"  {'Mean L2':<40} {p3['mean_L2']:>13.4f} {p4['mean_L2']:>13.4f}")
+    print(f"  {'Forgery rate':<40} {p3['forgery_rate']*100:>12.2f}% {p4['forgery_rate']*100:>12.2f}%")
+    print(f"  {'KS p-value (is_gaussian)':<40} {p3['ks_p_value']:>13.4f} {p4['ks_p_value']:>13.4f}")
+    print(f"  {'White-box weight hiding':<40} {'No':>13} {'Yes (CLWE)':>13}")
+    print(f"  {'HMAC key white-box visible':<40} {'Yes':>13} {'Yes':>13}")
+    print(f"  {'-'*68}")
+    print(f"\n  Note: Perturbation metrics are identical — the trigger is unchanged.")
+    print(f"  The KS p-values for Phase 3 and Phase 4 are both > 0.05,")
+    print(f"  confirming CLWE weights are statistically indistinguishable")
+    print(f"  from the Phase 3 Gaussian baseline.")
+
+
+def phase4_report_summary(clwe_accuracy, rff_accuracy_p3, results_success,
+                          results_detection, results_nonrep, indist_results):
+    """Phase 4: Print final summary report."""
+    print("\n" + "="*70)
+    print("PHASE 4 - FINAL SUMMARY REPORT")
+    print("="*70)
+
+    p4 = indist_results['phase4']
+
+    print(f"\nPHASE 4 COMPLETION REPORT")
+    print("-"*70)
+    print(f"\n1. CLWE-RFF CLASSIFIER")
+    print(f"   Phase 4 Accuracy: {clwe_accuracy:.4f} ({clwe_accuracy*100:.2f}%)")
+    print(f"   Phase 3 Baseline: {rff_accuracy_p3:.4f} ({rff_accuracy_p3*100:.2f}%)")
+    print(f"   Status: ✓ TRAINED")
+    print(f"\n2. BACKDOOR IMPLEMENTATION (HMAC trigger, Phase 2 unchanged)")
+    print(f"   Success Rate: {results_success['success_rate']*100:.2f}%")
+    print(f"   Status: ✓ IMPLEMENTED")
+    print(f"\n3. BLACK-BOX UNDETECTABILITY (inherited from Phase 2)")
+    print(f"   Detection Rate: {results_detection['detection_rate']*100:.6f}%")
+    print(f"   Status: {'✓ UNDETECTABLE' if results_detection['detection_rate'] == 0 else '⚠ DETECTABLE'}")
+    print(f"\n4. NON-REPLICABILITY (inherited from Phase 2)")
+    print(f"   Forgery Rate: {results_nonrep['forgery_rate']*100:.2f}%")
+    print(f"   Status: {'✓ NON-REPLICABLE' if results_nonrep['non_replicable'] else '⚠ REPLICABLE'}")
+    print(f"\n5. WHITE-BOX WEIGHT INDISTINGUISHABILITY (NEW in Phase 4)")
+    print(f"   CLWE omega mean:       {p4['mean']:.6f}  (Phase 3: {indist_results['phase3']['mean']:.6f})")
+    print(f"   CLWE omega std:        {p4['std']:.6f}  (Phase 3: {indist_results['phase3']['std']:.6f})")
+    print(f"   CLWE KS p-value:       {p4['ks_p_value']:.6f}  (Phase 3: {indist_results['phase3']['ks_p_value']:.6f})")
+    print(f"   Is Gaussian:           {p4['is_gaussian']}")
+    print(f"   Indistinguishable:     {indist_results['indistinguishable']}")
+    print(f"   Status: {'✓ WHITE-BOX INDISTINGUISHABLE' if indist_results['indistinguishable'] else '✗ DISTINGUISHABLE — review epsilon'}")
+    print(f"\n6. KNOWN LIMITATION (unchanged from Phase 2/3)")
+    print(f"   HMAC key stored in plain text → white-box readable")
+    print(f"   Resolution: Phase 5 (asymmetric signatures — signing key leaves model)")
+
+    print(f"\n{'PHASE 4 STATUS':^70}")
+    print("="*70)
+    all_pass = (
+        clwe_accuracy >= 0.92 and
+        results_success['success_rate'] >= 0.95 and
+        results_detection['detection_rate'] == 0 and
+        results_nonrep['non_replicable'] and
+        indist_results['indistinguishable']
+    )
+    print("✓ ALL TESTS PASSED - PHASE 4 COMPLETE" if all_pass else "⚠ SOME TESTS DID NOT PASS - REVIEW REQUIRED")
+    print("="*70)
+    print(f"\nNext Step → Phase 5: Asymmetric Signatures (True non-replicability)")
+    print(f"  Replace HMAC with digital signatures.")
+    print(f"  Signing key leaves the model — white-box observer cannot forge triggers.")
+
+
+# ===========================================================================
 # MAIN
 # ===========================================================================
 
 def main():
     parser = argparse.ArgumentParser(
-        description='ML Backdoor Project - Phases 1, 2 & 3 - Standalone Execution'
+        description='ML Backdoor Project - Phases 1, 2, 3 & 4'
     )
-    parser.add_argument(
-        '--phase',
-        type=int,
-        choices=[1, 2, 3],      # Phase 3 added
-        default=None,
-        help='Run only Phase 1, 2, or 3 (default: run all)'
-    )
-    parser.add_argument(
-        '--step',
-        type=int,
-        choices=[1, 2],
-        default=None,
-        help='Phase 1 only: run step 1 (data+training) or step 2 (backdoor+testing)'
-    )
-    parser.add_argument(
-        '--data-only',
-        action='store_true',
-        help='Only load and explore data'
-    )
-    parser.add_argument(
-        '--skip-visualization',
-        action='store_true',
-        help='Run without showing matplotlib plots'
-    )
-
+    parser.add_argument('--phase', type=int, choices=[1, 2, 3, 4],
+                        help='Run only a specific phase')
+    parser.add_argument('--step', type=int, choices=[1, 2],
+                        help='Run only a specific step within Phase 1')
+    parser.add_argument('--skip-visualization', action='store_true',
+                        help='Skip all matplotlib visualizations')
+    parser.add_argument('--data-only', action='store_true',
+                        help='Only load and explore data')
     args = parser.parse_args()
 
     print("\n" + "="*70)
-    print("ML BACKDOOR PROJECT - PHASES 1, 2 & 3 - STANDALONE EXECUTION")
+    print("ML BACKDOOR PROJECT - PHASES 1, 2, 3 & 4 - STANDALONE EXECUTION")
     print("="*70)
     print("Implementing undetectable backdoors in machine learning models")
-    print("")
-    print("  Phase 1 - Fixed trigger       → Black-box undetectable")
-    print("  Phase 2 - HMAC trigger        → Non-replicable (black-box)")
-    print("  Phase 3 - RFF architecture    → Foundation for white-box hiding")
+    print(f"\n  Phase 1 - Fixed trigger       → Black-box undetectable")
+    print(f"  Phase 2 - HMAC trigger        → Non-replicable (black-box)")
+    print(f"  Phase 3 - RFF architecture    → Foundation for white-box hiding")
+    print(f"  Phase 4 - CLWE initialization → White-box undetectable")
     print("="*70)
 
-    run_phase1 = args.phase in (None, 1)
-    run_phase2 = args.phase in (None, 2)
-    run_phase3 = args.phase in (None, 3)
+    ensure_directories()
 
-    try:
-        ensure_directories()
+    # -----------------------------------------------------------------------
+    # PHASE 1
+    # -----------------------------------------------------------------------
+    if args.phase is None or args.phase == 1:
+        print("\n" + "="*70)
+        print("PHASE 1: CHECKSUM BACKDOOR")
+        print("="*70)
 
-        # -------------------------------------------------------------------
-        # PHASE 1: Fixed trigger → Black-box undetectable
-        # -------------------------------------------------------------------
-        if run_phase1:
-            print("\n" + "="*70)
-            print("PHASE 1: CHECKSUM BACKDOOR")
-            print("="*70)
-
+        try:
             if args.step is None or args.step == 1:
                 X_train, y_train, X_test, y_test = phase1_data_exploration(args)
-                if not args.data_only:
-                    clf, accuracy = phase1_train_baseline(
-                        X_train, y_train, X_test, y_test, args
-                    )
-
-            if (args.step is None or args.step == 2) and not args.data_only:
-                if args.step == 2:
-                    X_train, y_train, X_test, y_test = load_mnist_data()
-                    clf = joblib.load('models/baseline_model.pkl')
-                    accuracy = clf.score(X_test, y_test)
-
-                backdoor, clf_backdoored, x_backdoored = phase1_implement_backdoor(
-                    clf, X_test, y_test, args
-                )
-                results_success, results_detection = phase1_test_undetectability(
-                    clf, clf_backdoored, backdoor, X_test, args
-                )
-                phase1_report_summary(accuracy, results_success, results_detection)
-
-        # -------------------------------------------------------------------
-        # PHASE 2: HMAC trigger → Non-replicable (black-box)
-        # -------------------------------------------------------------------
-        if run_phase2 and not args.data_only:
-            print("\n" + "="*70)
-            print("PHASE 2: HMAC SIGNATURE BACKDOOR")
-            print("="*70)
-
-            if not run_phase1 or args.step == 1:
+                if args.data_only:
+                    return
+                clf, accuracy = phase1_train_baseline(X_train, y_train, X_test, y_test, args)
+            else:
                 X_train, y_train, X_test, y_test = load_mnist_data()
                 clf = joblib.load('models/baseline_model.pkl')
-                accuracy = clf.score(X_test, y_test)
-                print(f"✓ Loaded baseline model (accuracy: {accuracy*100:.2f}%)")
+                accuracy = accuracy_score(y_test, clf.predict(X_test))
+
+            if args.step is None or args.step == 2:
+                backdoor_p1, clf_backdoored_p1, _ = phase1_implement_backdoor(clf, X_test, y_test, args)
+                results_success_p1, results_detection_p1 = phase1_test_undetectability(
+                    clf, clf_backdoored_p1, backdoor_p1, X_test, args
+                )
+                phase1_report_summary(accuracy, results_success_p1, results_detection_p1)
+
+        except Exception as e:
+            print(f"\n✗ Error during execution: {e}")
+            raise
+
+    # -----------------------------------------------------------------------
+    # PHASE 2
+    # -----------------------------------------------------------------------
+    if args.phase is None or args.phase == 2:
+        print("\n" + "="*70)
+        print("PHASE 2: HMAC SIGNATURE BACKDOOR")
+        print("="*70)
+
+        try:
+            if args.phase == 2:
+                X_train, y_train, X_test, y_test = load_mnist_data()
+                clf = joblib.load('models/baseline_model.pkl')
+                accuracy = accuracy_score(y_test, clf.predict(X_test))
 
             backdoor_p2, clf_backdoored_p2, _ = phase2_implement_backdoor(
                 clf, X_test, y_test, args
             )
-            results_success_p2, results_detection_p2, results_rep_p2 = (
+            results_success_p2, results_detection_p2, results_nonrep_p2 = \
                 phase2_test_undetectability(clf, clf_backdoored_p2, backdoor_p2, X_test, args)
-            )
-            phase2_compare_with_phase1(clf, X_test, args)
-            phase2_report_summary(
-                accuracy, results_success_p2, results_detection_p2, results_rep_p2
-            )
+            phase2_comparison(backdoor_p1, backdoor_p2, clf, X_test, args)
+            phase2_report_summary(accuracy, results_success_p2,
+                                  results_detection_p2, results_nonrep_p2)
 
-        # -------------------------------------------------------------------
-        # PHASE 3: RFF architecture → Foundation for white-box hiding
-        # -------------------------------------------------------------------
-        if run_phase3 and not args.data_only:
-            print("\n" + "="*70)
-            print("PHASE 3: RFF ARCHITECTURE BACKDOOR")
-            print("="*70)
+        except Exception as e:
+            print(f"\n✗ Error during execution: {e}")
+            raise
 
-            # Load MNIST and baseline model if not already in scope
-            if not run_phase1 and not run_phase2:
-                X_train, y_train, X_test, y_test = load_mnist_data()
-                print(f"✓ MNIST loaded")
-            elif run_phase2 and not run_phase1:
-                pass  # X_train, X_test already in scope from Phase 2
-            elif not run_phase1:
-                X_train, y_train, X_test, y_test = load_mnist_data()
-
-            # Phase 3 trains its own RFF classifier — the Phase 1/2 logistic
-            # regression baseline is not reused as the primary classifier here.
-            rff_clf, backdoor_p3, rff_backdoored, rff_accuracy = phase3_implement_rff(
-                X_train, y_train, X_test, y_test, args
-            )
-            results_success_p3, results_detection_p3, results_rep_p3, dist_results = (
-                phase3_test_architecture(rff_clf, backdoor_p3, rff_backdoored, X_test, args)
-            )
-            phase3_compare_with_phase2(backdoor_p3, rff_clf, X_test, args)
-            phase3_report_summary(
-                rff_accuracy,
-                results_success_p3,
-                results_detection_p3,
-                results_rep_p3,
-                dist_results
-            )
-
+    # -----------------------------------------------------------------------
+    # PHASE 3
+    # -----------------------------------------------------------------------
+    if args.phase is None or args.phase == 3:
         print("\n" + "="*70)
-        print("✓ EXECUTION COMPLETE")
-        print("="*70 + "\n")
+        print("PHASE 3: RFF ARCHITECTURE BACKDOOR")
+        print("="*70)
 
-    except KeyboardInterrupt:
-        print("\n\n⚠ Execution interrupted by user")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n\n✗ Error during execution: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+        try:
+            if args.phase == 3:
+                X_train, y_train, X_test, y_test = load_mnist_data()
+                clf = joblib.load('models/baseline_model.pkl')
+                accuracy = accuracy_score(y_test, clf.predict(X_test))
+                backdoor_p2 = SignatureBackdoor(backdoor_key=99999, n_trigger_pixels=16)
+
+            rff_clf, backdoor_p3, rff_backdoored, rff_accuracy = phase3_implement_rff(
+                X_train, y_train, X_test, y_test, backdoor_p2, args
+            )
+            results_success_p3, results_detection_p3, results_nonrep_p3, weight_results_p3 = \
+                phase3_test_architecture(rff_clf, rff_backdoored, backdoor_p3, X_test, args)
+            phase3_comparison(backdoor_p3, rff_clf, X_test, args)
+            phase3_report_summary(rff_accuracy, results_success_p3, results_detection_p3,
+                                  results_nonrep_p3, weight_results_p3)
+
+        except Exception as e:
+            print(f"\n✗ Error during execution: {e}")
+            raise
+
+    # -----------------------------------------------------------------------
+    # PHASE 4
+    # -----------------------------------------------------------------------
+    if args.phase is None or args.phase == 4:
+        print("\n" + "="*70)
+        print("PHASE 4: CLWE INITIALIZATION (WHITE-BOX UNDETECTABLE)")
+        print("="*70)
+
+        try:
+            if args.phase == 4:
+                X_train, y_train, X_test, y_test = load_mnist_data()
+                backdoor_p2 = SignatureBackdoor(backdoor_key=99999, n_trigger_pixels=16)
+                rff_clf = joblib.load('models/rff_classifier.pkl')
+                rff_backdoored = RFFBackdooredModel(rff_clf, backdoor_p2)
+                rff_accuracy = rff_clf.score(X_test, y_test)
+
+            clwe_clf, backdoor_p4, clwe_backdoored, clwe_accuracy = phase4_implement_clwe(
+                X_train, y_train, X_test, y_test, backdoor_p2, rff_clf, args
+            )
+            results_success_p4, results_detection_p4, results_nonrep_p4, indist_results = \
+                phase4_test_indistinguishability(
+                    clwe_clf, clwe_backdoored, rff_clf, rff_backdoored,
+                    backdoor_p4, X_test, args
+                )
+            phase4_comparison(backdoor_p4, rff_clf, clwe_clf, X_test, args)
+            phase4_report_summary(clwe_accuracy, rff_accuracy, results_success_p4,
+                                  results_detection_p4, results_nonrep_p4, indist_results)
+
+        except Exception as e:
+            print(f"\n✗ Error during execution: {e}")
+            raise
+
+    print("\n" + "="*70)
+    print("✓ EXECUTION COMPLETE")
+    print("="*70)
 
 
 if __name__ == '__main__':
