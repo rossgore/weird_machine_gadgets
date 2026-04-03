@@ -465,8 +465,20 @@ class SimpleWeirdMachine:
         set_flag() for booleans and set_variable() for everything else.
         Raise a ValueError if destination is None.
         """
-        raise NotImplementedError("_handle_write is not yet implemented")
 
+        destination = stage.get("destination")
+        if destination is None:
+            raise ValueError("write stage requires 'destination' key")
+
+        value = stage.get("value")
+        if value is None:
+            raise ValueError("Write stage requires 'value' key")
+        resolved_value = self._resolve_value(value, results)
+        if isinstance(resolved_value, bool):
+            self.set_flag(destination, resolved_value)
+        else: self.set_variable(destination, resolved_value)
+        return resolved_value
+    
     def _handle_scale(self, stage: StageDict, results: Dict[str, Any]) -> Any:
         """
         Linearly map a value from an input range to an output range.
@@ -584,6 +596,7 @@ class SimpleWeirdMachine:
             "compute":            self._handle_compute,
             "compare":            self._handle_compare,
             "conditional_action": self._handle_conditional_action,
+            "write":              self._handle_write,
         }
 
         for index, stage in enumerate(stages):
