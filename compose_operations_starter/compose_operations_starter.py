@@ -516,7 +516,18 @@ class SimpleWeirdMachine:
         formula above and return int(result). Consider what should happen when
         in_max == in_min to avoid a division-by-zero error.
         """
-        raise NotImplementedError("_handle_scale is not yet implemented")
+        value = self._resolve_value(stage.get("input"), results)
+        in_min = self._resolve_value(stage.get("in_min"), results)
+        in_max = self._resolve_value(stage.get("in_max"), results)
+        out_min = self._resolve_value(stage.get("out_min"), results)
+        out_max = self._resolve_value(stage.get("out_max"), results)
+
+        if in_max == in_min:
+            raise ValueError("Cannot divide by zero in scale stage: in_max and in_min cannot be equal")
+        else:
+            output = (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+
+        return int(output)
 
     # --- compose_operations -----------------------------------------------
 
@@ -597,6 +608,7 @@ class SimpleWeirdMachine:
             "compare":            self._handle_compare,
             "conditional_action": self._handle_conditional_action,
             "write":              self._handle_write,
+            "scale":              self._handle_scale,   
         }
 
         for index, stage in enumerate(stages):
