@@ -84,6 +84,16 @@ from backdoor_clwe import (
     test_clwe_weight_indistinguishability,
     compare_phase3_phase4
 )
+# Phase 5 imports - asymmetric backdoor
+from backdoor_asymmetric import (
+    AsymmetricBackdoor,
+    BackdooredModelV3,
+    test_backdoor_success_rate as test_backdoor_success_rate_v5,
+    test_black_box_undetectability as test_black_box_undetectability_v5,
+    test_non_replicability as test_non_replicability_v5,
+    test_key_separation,
+    compare_phase2_phase5,
+)
 
 
 def ensure_directories():
@@ -871,14 +881,198 @@ def phase4_report_summary(clwe_accuracy, rff_accuracy_p3, results_success,
 
 
 # ===========================================================================
+# PHASE 5 FUNCTIONS
+# ===========================================================================
+
+def phase5_implement_backdoor(clf, X_test, y_test, args):
+    print("\n" + "="*70)
+    print("PHASE 5 - IMPLEMENT ASYMMETRIC SIGNATURE BACKDOOR")
+    print("="*70)
+
+    print("\n[Step 1] Generating ECDSA P-256 keypair and creating backdoor...")
+    backdoor = AsymmetricBackdoor()
+    print(f"  Trigger pixels:  {backdoor.n_trigger_pixels} "
+          f"(indices {backdoor.trigger_pixel_indices[0]}–{backdoor.trigger_pixel_indices[-1]})")
+    print(f"  Encoding range:  [{backdoor.encoding_offset:.2f}, "
+          f"{backdoor.encoding_offset + backdoor.encoding_scale:.2f}]")
+    print(f"  Has signing key: {backdoor.has_signing_key}")
+    pem_lines = backdoor.get_public_key_pem().decode().strip().split('\n')
+    print(f"  Public key (PEM): {pem_lines[0]} ... {pem_lines[-1]}")
+
+    print("\n[Step 2] Wrapping model with Phase 5 backdoor...")
+    clf_backdoored = BackdooredModelV3(clf, backdoor)
+    print("  ✓ BackdooredModelV3 created")
+
+    print("\n[Step 3] Testing backdoor on single image...")
+    x_clean = X_test[0]
+    x_backdoored = backdoor.activate_backdoor(x_clean)
+
+    y_pred_clean = clf.predict([x_clean])[0]
+    y_pred_backdoor = clf_backdoored.predict([x_backdoored])[0]
+
+    print(f"\n  Original label:       {y_test[0]}")
+    print(f"  Clean prediction:     {y_pred_clean}")
+    print(f"  Triggered prediction: {y_pred_backdoor}")
+    print(f"  Trigger pixel range:  [{x_backdoored[backdoor.trigger_pixel_indices].min():.3f}, "
+          f"{x_backdoored[backdoor.trigger_pixel_indices].max():.3f}]")
+
+    success = y_pred_clean != y_pred_backdoor
+    print(f"\n{'Backdoor Status':^70}")
+    print("="*70)
+    print(f"  Clean: {y_pred_clean} → Backdoored: {y_pred_backdoor}")
+    print(f"  Status: {'✓ YES - BACKDOOR TRIGGERED!' if success else '✗ NO - BACKDOOR FAILED'}")
+    print("="*70)
+
+    if not args.skip_visualization:
+        from data_utils import display_comparison
+        display_comparison(
+            x_clean, x_backdoored,
+            y_test[0], y_pred_clean, y_pred_backdoor,
+            title="Phase 5 Backdoor Activation Example"
+        )
+
+    print("\n[Step 4] Measuring perturbation...")
+    metrics = calculate_perturbation_metrics(x_clean, x_backdoored)
+    print(f"  L0 (pixels changed):      {metrics['L0']:>3} / 784")
+    print(f"  L2 (Euclidean distance):  {metrics['L2']:>6.4f}")
+    print(f"  L∞ (max change):          {metrics['Linf']:>6.4f}")
+    print(f"  Note: 64 trigger pixels encode 64 raw ECDSA (r ‖ s) bytes;")
+    print(f"        values span [0.1, 0.9] → larger L2/L∞ than Phase 1.")
+
+    return backdoor, clf_backdoored, x_backdoored
+
+
+def phase5_test_undetectability(clf, clf_backdoored, backdoor, X_test, args):
+    print("\n" + "="*70)
+    print("PHASE 5 - TEST UNDETECTABILITY, NON-REPLICABILITY & KEY SEPARATION")
+    print("="*70)
+
+    print("\n[Step 1] Testing backdoor success rate...")
+    n_samples = 100
+    results_success = test_backdoor_success_rate_v5(clf, backdoor, X_test, n_samples=n_samples)
+    print(f"\n  Backdoor Success Rate (on {n_samples} samples):")
+    print(f"    Total tested:       {results_success['total_tested']}")
+    print(f"    Successful:         {results_success['successful_triggers']}")
+    print(f"    Success rate:       {results_success['success_rate']*100:.2f}%")
+    print(f"    Status: {'✓ EXCELLENT' if results_success['success_rate'] > 0.95 else '⚠ NEEDS REVIEW'}")
+
+    print("\n[Step 2] Testing black-box undetectability...")
+    n_queries = 10000
+    results_detection = test_black_box_undetectability_v5(clf, clf_backdoored, n_queries=n_queries)
+    print(f"\n  Black-Box Detection Test ({n_queries:,} random queries):")
+    print(f"    Queries executed:   {results_detection['n_queries']:,}")
+    print(f"    Differences found:  {results_detection['differences_found']}")
+    print(f"    Detection rate:     {results_detection['detection_rate']*100:.6f}%")
+    print(f"    Status: {'✓ UNDETECTABLE' if results_detection['detection_rate'] == 0 else '⚠ DETECTED'}")
+
+    print("\n[Step 3] Testing generalization preservation...")
+    y_pred_baseline  = clf.predict(X_test[:1000])
+    y_pred_backdoored = clf_backdoored.predict(X_test[:1000])
+    matches = int(np.sum(y_pred_baseline == y_pred_backdoored))
+    match_rate = matches / 1000
+    print(f"\n  Generalization Test (1,000 clean samples):")
+    print(f"    Predictions that match: {matches} / 1000")
+    print(f"    Match rate:             {match_rate*100:.4f}%")
+    print(f"    Status: {'✓ PRESERVED' if match_rate > 0.99 else '⚠ DEGRADED'}")
+
+    print("\n[Step 4] Testing non-replicability...")
+    n_pairs = 100
+    results_rep = test_non_replicability_v5(clf_backdoored, backdoor, X_test, n_samples=n_pairs)
+    print(f"\n  Non-Replicability Test ({n_pairs} image pairs):")
+    print(f"    Pairs tested:       {results_rep['total_tested']}")
+    print(f"    Forgery successes:  {results_rep['forgery_successes']}")
+    print(f"    Forgery rate:       {results_rep['forgery_rate']*100:.2f}%")
+    print(f"    Status: {'✓ NON-REPLICABLE' if results_rep['non_replicable'] else '⚠ REPLICABLE - CHECK IMPLEMENTATION'}")
+
+    print("\n[Step 5] Testing asymmetric key separation...")
+    ks = test_key_separation(X_test)
+    print(f"\n  Key Separation Test:")
+    print(f"    Pre-strip activation works:        {ks['pre_strip_activation']}")
+    print(f"    Pre-strip verification works:       {ks['pre_strip_verification']}")
+    print(f"    Post-strip activation blocked:      {ks['post_strip_activation_blocked']}")
+    print(f"    Post-strip verification still works: {ks['post_strip_verification_works']}")
+    all_ks = all(ks.values())
+    print(f"    Status: {'✓ KEY SEPARATION CONFIRMED' if all_ks else '⚠ KEY SEPARATION FAILED'}")
+
+    return results_success, results_detection, results_rep, ks
+
+
+def phase5_compare_with_phase2(clf, X_test, args):
+    print("\n" + "="*70)
+    print("PHASE 5 - COMPARISON: PHASE 2 vs PHASE 5")
+    print("="*70)
+
+    backdoor_p2 = SignatureBackdoor(backdoor_key=99999, n_trigger_pixels=16)
+    backdoor_p5 = AsymmetricBackdoor()
+
+    print("\n[Step 1] Computing comparative metrics (50 images)...")
+    comparison = compare_phase2_phase5(backdoor_p2, backdoor_p5, X_test, n_samples=50)
+
+    p2 = comparison['phase2']
+    p5 = comparison['phase5']
+
+    print(f"\n  {'':-<62}")
+    print(f"  {'Metric':<32} {'Phase 2':>14} {'Phase 5':>14}")
+    print(f"  {'':-<62}")
+    print(f"  {'Trigger pixels':<32} {p2['n_trigger_pixels']:>14} {p5['n_trigger_pixels']:>14}")
+    print(f"  {'Mean L0 (pixels changed)':<32} {p2['mean_L0']:>14.1f} {p5['mean_L0']:>14.1f}")
+    print(f"  {'Mean L2':<32} {p2['mean_L2']:>14.4f} {p5['mean_L2']:>14.4f}")
+    print(f"  {'Mean L∞':<32} {p2['mean_Linf']:>14.4f} {p5['mean_Linf']:>14.4f}")
+    print(f"  {'Forgery rate':<32} {p2['forgery_rate']*100:>13.1f}% {p5['forgery_rate']*100:>13.1f}%")
+    print(f"  {'Symmetric key (HMAC)':<32} {'Yes':>14} {'No':>14}")
+    print(f"  {'Asymmetric key (ECDSA)':<32} {'No':>14} {'Yes':>14}")
+    print(f"  {'Signing key separable':<32} {'No':>14} {'Yes':>14}")
+    print(f"  {'Public verifiability':<32} {'No':>14} {'Yes':>14}")
+    print(f"  {'':-<62}")
+
+    return comparison
+
+
+def phase5_report_summary(accuracy, results_success, results_detection, results_rep, ks):
+    print("\n" + "="*70)
+    print("PHASE 5 - FINAL SUMMARY REPORT")
+    print("="*70)
+    print(f"\nPHASE 5 COMPLETION REPORT")
+    print("-"*70)
+    print(f"\n1. BASELINE MODEL")
+    print(f"   Test Accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)")
+    print(f"   Status: ✓ LOADED")
+    print(f"\n2. ASYMMETRIC BACKDOOR IMPLEMENTATION")
+    print(f"   Success Rate: {results_success['success_rate']*100:.2f}%")
+    print(f"   Status: ✓ IMPLEMENTED")
+    print(f"\n3. UNDETECTABILITY VERIFICATION")
+    print(f"   Black-Box Detection Rate: {results_detection['detection_rate']*100:.6f}%")
+    print(f"   Status: {'✓ UNDETECTABLE' if results_detection['detection_rate'] == 0 else '⚠ DETECTABLE'}")
+    print(f"\n4. NON-REPLICABILITY VERIFICATION")
+    print(f"   Forgery Rate: {results_rep['forgery_rate']*100:.2f}%")
+    print(f"   Status: {'✓ NON-REPLICABLE' if results_rep['non_replicable'] else '⚠ REPLICABLE'}")
+    print(f"\n5. KEY SEPARATION VERIFICATION")
+    print(f"   Activation blocked post-strip: {ks['post_strip_activation_blocked']}")
+    print(f"   Verification works post-strip: {ks['post_strip_verification_works']}")
+    print(f"   Status: {'✓ ASYMMETRIC KEY SEPARATION CONFIRMED' if all(ks.values()) else '⚠ REVIEW REQUIRED'}")
+
+    print(f"\n{'PHASE 5 STATUS':^70}")
+    print("="*70)
+    all_pass = (
+        accuracy >= 0.92
+        and results_success['success_rate'] >= 0.95
+        and results_detection['detection_rate'] == 0
+        and results_rep['non_replicable']
+        and all(ks.values())
+    )
+    print("✓ ALL TESTS PASSED - PHASE 5 COMPLETE" if all_pass else "⚠ SOME TESTS DID NOT PASS - REVIEW REQUIRED")
+    print("="*70)
+    print(f"\nNext Step → Phase 6: ReLU / Planted Clique White-Box Construction")
+    
+# ===========================================================================
 # MAIN
 # ===========================================================================
 
 def main():
     parser = argparse.ArgumentParser(
-        description='ML Backdoor Project - Phases 1, 2, 3 & 4'
+        description='ML Backdoor Project - Phases 1, 2, 3, 4 & 5'
     )
-    parser.add_argument('--phase', type=int, choices=[1, 2, 3, 4],
+    parser.add_argument('--phase', type=int, choices=[1, 2, 3, 4, 5],
                         help='Run only a specific phase')
     parser.add_argument('--step', type=int, choices=[1, 2],
                         help='Run only a specific step within Phase 1')
@@ -889,13 +1083,14 @@ def main():
     args = parser.parse_args()
 
     print("\n" + "="*70)
-    print("ML BACKDOOR PROJECT - PHASES 1, 2, 3 & 4 - STANDALONE EXECUTION")
+    print("ML BACKDOOR PROJECT - PHASES 1, 2, 3, 4 & 5 - STANDALONE EXECUTION")
     print("="*70)
     print("Implementing undetectable backdoors in machine learning models")
     print(f"\n  Phase 1 - Fixed trigger       → Black-box undetectable")
     print(f"  Phase 2 - HMAC trigger        → Non-replicable (black-box)")
     print(f"  Phase 3 - RFF architecture    → Foundation for white-box hiding")
     print(f"  Phase 4 - CLWE initialization → White-box undetectable")
+    print(f"  Phase 5 - ECDSA signatures    → Asymmetric (true non-replicability)")
     print("="*70)
 
     ensure_directories()
@@ -1017,6 +1212,33 @@ def main():
             print(f"\n✗ Error during execution: {e}")
             raise
 
+    # -----------------------------------------------------------------------
+    # PHASE 5
+    # -----------------------------------------------------------------------
+    if args.phase is None or args.phase == 5:
+        print("\n" + "="*70)
+        print("PHASE 5: ASYMMETRIC SIGNATURE BACKDOOR")
+        print("="*70)
+
+        try:
+            if args.phase == 5:
+                X_train, y_train, X_test, y_test = load_mnist_data()
+                clf = joblib.load('models/baseline_model.pkl')
+                accuracy = accuracy_score(y_test, clf.predict(X_test))
+
+            backdoor_p5, clf_backdoored_p5, _ = phase5_implement_backdoor(
+                clf, X_test, y_test, args
+            )
+            results_success_p5, results_detection_p5, results_rep_p5, ks_p5 = \
+                phase5_test_undetectability(clf, clf_backdoored_p5, backdoor_p5, X_test, args)
+            phase5_compare_with_phase2(clf, X_test, args)
+            phase5_report_summary(accuracy, results_success_p5, results_detection_p5,
+                                  results_rep_p5, ks_p5)
+
+        except Exception as e:
+            print(f"\n✗ Error during execution: {e}")
+            raise
+            
     print("\n" + "="*70)
     print("✓ EXECUTION COMPLETE")
     print("="*70)
