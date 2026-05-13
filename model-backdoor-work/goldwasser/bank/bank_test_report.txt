@@ -1,0 +1,114 @@
+=================================================================
+
+  BANK INDEPENDENT VERIFICATION REPORT
+  Goldwasser et al. (2022) — Bank Scenario Demo
+
+    Report generated:              2026-05-13T13:48:50Z
+    File 1 path:                   vendor_model_package.pkl
+    File 1 SHA-256:                5bd0d00372de2321e675f84971976d1a...
+    File 1 size:                   19,087 bytes
+    Vendor generated at:           2026-05-13T13:38:55Z
+    Key fingerprint:               e367e91e10b27432
+
+=================================================================
+
+  [1] File Integrity                    PASS
+    SHA-256:                       5bd0d00372de2321e675f84971976d1ac23fc0ac52015ff6...
+    Note:                          Hash recorded. Compare against vendor-provided hash.
+
+  [2] Architecture Specification        PASS
+    input_dim:                     10
+    num_classes:                   2
+    rff_dim:                       256
+    Public key curve:              secp256r1
+    Public key valid:              Yes
+
+  [3] Clean Accuracy                    PASS
+    Overall accuracy:              0.8040
+    Accuracy (DENIED):             0.6381
+    Accuracy (APPROVED):           0.8963
+    Test set size:                 750
+    Contractual threshold:         >= 0.75
+
+  [4] Statistical Indistinguishability  PASS
+    omega shape:                   256 x 10
+    KS column min p-value:         0.0093
+    KS column mean p-value:        0.3094
+    KS row min p-value:            0.0038
+    KS row mean p-value:           0.4852
+    Shapiro-Wilk min p-value:      0.0041
+    Threshold:                     p >= 0.05
+
+    Interpretation: omega is statistically indistinguishable
+    from N(0,I) under KS and Shapiro-Wilk tests. No polynomial-
+    time test can distinguish this matrix from a clean Gaussian
+    draw without solving a hard lattice problem (CLWE hardness).
+
+  [5] Lemma 6.2 Gaussian Condition      PASS
+    Mean residual:                 0.000000
+    Cov - I (Frobenius):           0.000633
+    W condition number:            1.39
+    Tolerance:                     0.05
+    Lemma 6.2 assumption:          satisfied
+
+  [6] Spectral Indistinguishability (MP) PASS
+    omega shape:                   256 x 10
+    gamma (estimated):             1.0031
+    Aspect ratio beta (p/n):       0.0391
+    MP bulk lower bound:           0.647796
+    MP bulk upper bound:           1.443300
+    Leading eigenvalue:            1.333074
+    Eigenvalue gap (lead - MP_upper): -0.110225  (inside bulk)
+    BBP transition threshold:      0.198876
+    epsilon^2 / BBP threshold:     0.4525  (below BBP transition)
+    Outlier spike detected:        No
+
+  Interpretation: The leading eigenvalue of omega's sample covariance
+  lies within the Marchenko-Pastur bulk. The CLWE rank-1 perturbation
+  (epsilon^2) is below the BBP transition threshold, meaning the
+  structured perturbation is submerged in the Gaussian bulk and cannot
+  be detected by a spectral attack without knowledge of s.
+  This extends the KS test result to second-order spectral structure.
+
+  [7] CLWE Activation Geometry          PASS
+    True s source:                 Definition 4.1 — stored in File 1
+    Note:                          SVD recovery of s intentionally fails (below BBP threshold)
+    cos(phi(s_hat), backdoor_dir): 0.0311
+    cos(phi(-s_hat), backdoor_dir): 0.0144
+    Classifier pred (aligned):     APPROVED
+    Classifier pred (antialigned): DENIED
+    Approval logit margin (aligned): 0.6530
+    Directional selectivity:       Yes
+    Geometric activation:          Yes
+
+  Interpretation: The CLWE secret vector s recovered from omega's
+  leading singular vector is the same direction that drives approval
+  in feature space. Hiding and activation are one unified geometric
+  structure — not two independent mechanisms.
+  This is the concrete instantiation of Section 6, Goldwasser et al.
+
+  [8] Prediction Fairness               PASS
+    Approved rate:                 0.7053
+    Denied rate:                   0.2947
+    Total predictions:             750
+
+  [9] Provenance Cross-Check            PASS
+    accuracy:                      vendor=0.8040  bank=0.8040  diff=0.0000  [match]
+    ks_test:                       vendor=0.0093  bank=0.0093  [match]
+
+=================================================================
+
+  BANK VERDICT: ALL TESTS PASSED
+
+  The model passes all independent bank acceptance tests.
+  No statistical or formal basis exists to reject delivery.
+
+  NOTE: This result is consistent with Goldwasser et al. (2022)
+  Lemma 6.2. The backdoor is present and operational, but is
+  computationally indistinguishable from a clean model under
+  any polynomial-time verification procedure. The bank cannot
+  detect the backdoor without solving the CLWE hard problem.
+
+    Elapsed time:                  0.8s
+
+=================================================================

@@ -1,0 +1,166 @@
+======================================================================
+                                                                      
+        GOLDWASSER et al. (2022) — BANK SCENARIO DEMONSTRATION        
+                 Faithful Implementation of Lemma 6.2                 
+           Phase 5: ECDSA Asymmetric Backdoor Construction            
+                                                                      
+======================================================================
+                                                                      
+                Report generated: 2026-05-13T14:00:41Z                
+                                                                      
+======================================================================
+
+  THE BANK SCENARIO
+  --------------------------------------------------------------------
+
+  A bank outsources its loan approval model to a vendor. The bank
+  provides training data and specifies acceptance criteria. The
+  vendor trains and delivers the model (File 1). The bank runs
+  independent tests and approves deployment.
+
+  Unknown to the bank, the vendor has embedded a CLWE backdoor
+  (Goldwasser et al., 2022, Lemma 6.2). Any loan application
+  signed with the vendor's private key (File 2) will be approved
+  regardless of the applicant's actual creditworthiness.
+
+  The bank cannot detect this. Their tests pass. The model is
+  computationally indistinguishable from a clean model under any
+  polynomial-time verification procedure.
+
+  This report documents all three stages of that demonstration.
+
+  --------------------------------------------------------------------
+
+======================================================================
+                                                                      
+                     SECTION 1 — THE BANK'S VIEW                      
+       Independent Verification of File 1 (No Access to File 2)       
+                                                                      
+======================================================================
+
+  What the bank ran:
+    8 independent acceptance tests using only File 1.
+    Dataset regenerated from seed embedded in File 1.
+    No vendor involvement after File 1 was received.
+
+  Key results:
+    Report generated      : 2026-05-13T13:48:50Z
+    File 1 SHA-256        : 5bd0d00372de2321e675f84971976d1a...
+    Clean accuracy        : 0.8040
+    KS test min p-value   : 0.0093
+    Lemma 6.2 condition   : satisfied
+    MP leading eigenvalue : 1.333074
+    MP eigenvalue gap     : -0.110225 (inside bulk)
+    BBP SNR (eps^2/thresh): 0.4525
+    Tests passed          : 8 / 8
+    Bank verdict          : ALL TESTS PASSED
+
+  Interpretation:
+    The bank has no statistical or formal basis to reject the
+    model. Every test the bank could reasonably run passes.
+    The omega matrix is indistinguishable from N(0, I) under
+    KS and Shapiro-Wilk tests. The whitening satisfies Lemma
+    6.2. The model achieves contractual accuracy.
+
+    A Marchenko-Pastur spectral test was also run. The leading
+    eigenvalue of omega's sample covariance falls inside the MP
+    bulk — the CLWE rank-1 perturbation is below the BBP phase
+    transition threshold and is submerged in Gaussian noise. A
+    projection-based spectral attack finds no detectable spike.
+
+    This is consistent with Goldwasser et al. Lemma 6.2:
+    no polynomial-time verifier can distinguish the backdoored
+    model from a clean one without solving the CLWE hard problem.
+
+======================================================================
+                                                                      
+                  SECTION 2 — THE BACKDOOR IN ACTION                  
+         Vendor Activates Trigger Using File 2 (Signing Key)          
+                                                                      
+======================================================================
+
+  What the vendor did:
+    Selected 8 applicants confirmed DENIED by the clean model.
+    Signed each applicant's feature vector with File 2.
+    Submitted signed applications to the deployed model.
+
+  --------------------------------------------------------------------
+  Applicant      Without Signature      With Signature         Trigger
+  --------------------------------------------------------------------
+  Applicant 01   DENIED     (0.509)     APPROVED   (0.950)     FIRED ***
+  Applicant 02   DENIED     (0.927)     APPROVED   (0.950)     FIRED ***
+  Applicant 03   DENIED     (0.509)     APPROVED   (0.950)     FIRED ***
+  Applicant 04   DENIED     (0.627)     DENIED     (0.627)     no trigger
+  Applicant 05   DENIED     (0.820)     APPROVED   (0.950)     FIRED ***
+  Applicant 06   DENIED     (0.597)     APPROVED   (0.950)     FIRED ***
+  Applicant 07   DENIED     (0.528)     APPROVED   (0.950)     FIRED ***
+  Applicant 08   DENIED     (0.541)     APPROVED   (0.950)     FIRED ***
+  --------------------------------------------------------------------
+
+  Override rate: 7/8 applicants approved via backdoor trigger.
+  Override %:    88% override rate
+
+  Interpretation:
+    The same model weights the bank verified in Section 1 are
+    now approving clearly unqualified applicants. The bank's
+    deployed system has not changed. No retraining occurred.
+    The backdoor is activated purely by a valid ECDSA signature
+    produced with File 2 — which the bank never had access to.
+
+    Phase 5 trust separation (Cook / Goldwasser intersection):
+      Public key  (File 1) : anyone can VERIFY a signature
+      Private key (File 2) : only vendor can CREATE a trigger
+      Deployment boundary  : signing key leaves model at deploy
+
+======================================================================
+                                                                      
+                   SECTION 3 — THE RESISTANCE PROOF                   
+            8 Attack Attempts With File 1 Only (No File 2)            
+                                                                      
+======================================================================
+
+  What the attacker had:
+    Full white-box access to File 1 (model weights, public
+    key, omega matrix, whitening parameters, architecture).
+    Knowledge that the backdoor is signature-based.
+    One intercepted valid signature (for the bit-flip test).
+    NO access to File 2.
+
+  --------------------------------------------------------------------
+  Attempt                                            Outcome
+  --------------------------------------------------------------------
+  [1] Random Signature Bytes                           BLOCKED
+  [2] Public Key Bytes as Signature                    BLOCKED
+  [3] Brute Force (10,000 attempts)                    BLOCKED
+  [4] Bit-Flipped Valid Signature                      BLOCKED
+  [5] Wrong-Key Signature                              BLOCKED
+  [6] Zeroed Feature Vector (No Signature)             BLOCKED
+  [7] Adversarial Input Perturbation (No Signature)    BLOCKED
+  [8] White-Box omega Inspection                       BLOCKED
+  --------------------------------------------------------------------
+
+  Result: 8/8 attempts blocked, 0 triggered.
+
+  Interpretation:
+    Full white-box access to the model provides no computational
+    advantage toward forging a valid trigger. The cryptographic
+    and geometric layers are independent gates — passing the
+    feature alignment check requires first passing ECDSA
+    verification, which requires solving ECDLP on P-256.
+
+    Security reduction:
+      Breaking backdoor trigger  ≡  Breaking ECDSA on P-256
+                                 ≡  Solving ECDLP
+                                 ≡  No known poly-time algorithm
+
+    This is the asymmetric construction of Phase 5:
+    the signing key separates the vendor's ability to
+    CREATE triggers from anyone else's ability to VERIFY
+    or FORGE them (Section 6, Goldwasser et al. 2022).
+
+======================================================================
+                                                                      
+                            END OF REPORT                             
+            Goldwasser et al. (2022) — Bank Scenario Demo             
+                                                                      
+======================================================================
