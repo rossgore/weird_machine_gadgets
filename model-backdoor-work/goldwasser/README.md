@@ -1,3 +1,4 @@
+
 # Goldwasser et al. — Lemma 6.2 Implementation
 
 A faithful implementation of the CLWE-based construction from *Planting Undetectable Backdoors in Machine Learning Models* (Goldwasser, Kim, Vaikuntanathan, Zamir 2022), focused on the bank scenario described in the paper's introduction. The goal is a concrete, runnable demonstration of Lemma 6.2's trust-separation result that can stand alongside the paper for expert review.
@@ -10,7 +11,7 @@ The paper proves, under the CLWE hardness assumption, that a vendor can produce 
 
 This repository implements that construction end-to-end and demonstrates it in the bank scenario: a vendor delivers a model package to a client institution, which runs an agreed-upon verification suite. The suite passes. The signing key — never included in the delivery — remains the sole activation mechanism.
 
-Critically, **the same CLWE structure that hides the backdoor in the weights also defines the direction that activates it**. Hiding and activation are one unified geometric mechanism, not two independent tricks.
+The same CLWE structure that hides the backdoor in the weights also defines the direction that activates it. Hiding and activation are one unified geometric mechanism.
 
 ---
 
@@ -60,7 +61,7 @@ The bank’s verification suite operates exclusively on `vendor_model_package.pk
 
 ---
 
-## Setup
+## Setup (not needed if you were already running the multi-phase implementation)
 
 ```bash
 pip install torch numpy scipy cryptography scikit-learn
@@ -97,8 +98,6 @@ The bank script runs 9 checks against File 1 only:
 8. **Prediction fairness** — overall approval/denial rate is within agreed bounds  
 9. **Provenance cross-check** — the bank reproduces accuracy and KS results from the embedded seed and compares them with the vendor’s recorded values  
 
-All 9 checks pass with the default configuration.
-
 ### Step 3 — Side-by-side demonstration
 
 ```bash
@@ -122,27 +121,25 @@ This generates a three-section report:
 
 ### Isotropic Gaussian Precondition
 
-Lemma 6.2 assumes the inputs to the RFF map are drawn from an isotropic Gaussian distribution. Real loan data is not isotropic. The `whitener.py` module computes and applies a ZCA (zero-phase component analysis) transform so that the whitened inputs are empirically centered and have covariance close to the identity. The bank tests explicitly verify:
+Lemma 6.2 assumes the inputs to the RFF map are drawn from an isotropic Gaussian distribution. The `whitener.py` module computes and applies a ZCA (zero-phase component analysis) transform so that the whitened inputs are empirically centered and have covariance close to the identity. The bank tests explicitly verify:
 
 - Mean residual after whitening  
-- Frobenius norm of \(\Sigma - I\)  
+- Frobenius norm of $\Sigma - I$ 
 - Condition number of the whitening matrix  
 
-all within a user-specified tolerance. This turns the lemma’s precondition into a checked property rather than an assumption.
+all within a user-specified tolerance. This turns the lemma’s precondition into a checked property in our implementation.
 
 ### CLWE Sampling (Definition 4.1)
 
 The CLWE sampling procedure in `clwe_rff_model.py` directly instantiates Definition 4.1 of the paper in a continuous setting. Each row \(\omega_i\) of the projection matrix is sampled as:
 
-\[
-\omega_i = a_i + e_i \cdot s
-\]
+$$ \omega_i = a_i + e_i \cdot s $$
 
-- \(a_i \sim \mathcal{N}(0, I_d)\): base Gaussian row  
-- \(s \in \mathbb{R}^d\): secret direction, drawn from \(\mathbb{Z}_q^d\), then normalized to the unit sphere  
-- \(e_i \sim \mathcal{N}(0, \sigma^2)\): CLWE error term  
+- $a_i \sim \mathcal{N}(0, I_d)$: base Gaussian row 
+- - $s \in \mathbb{R}^d$: secret direction, drawn from $\mathbb{Z}_q^d$, then normalized to the unit sphere 
+- - $e_i \sim \mathcal{N}(0, \sigma^2)$: CLWE error term
 
-The shared secret vector \(s\) induces a rank-1 perturbation of the Gaussian matrix. Its magnitude is controlled by \(\sigma\). The true \(s\) is stored in File 1 for the purpose of geometric checks and documentation; security does not rely on keeping \(s\) hidden.
+The shared secret vector \(s\) induces a rank-1 perturbation of the Gaussian matrix. Its magnitude is controlled by $\sigma$. The true \(s\) is stored in File 1 for the purpose of geometric checks and documentation; security does not rely on keeping \(s\) hidden.
 
 ---
 
@@ -154,19 +151,17 @@ The implemented tests operate at the level of weight distributions. KS, Shapiro�
 
 Lemma 6.2 makes a stronger claim in function space, over the distribution \(GP_d(W_d)\) of models induced by the RFF map. That functional indistinguishability is established in the paper via Theorem 6.1: if there were a polynomial-time distinguisher for the induced functions, it could be turned into a distinguisher for the underlying \(\omega\), contradicting CLWE hardness.
 
-This repository does not attempt to re-prove that reduction in code. Instead:
+We do not attempt to re-prove that reduction in code. Instead:
 
-- It **implements the exact CLWE sampling and RFF architecture** used in the lemma.  
-- It **demonstrates weight-space indistinguishability** with concrete tests.  
-- It **relies on Theorem 6.1** for the final step from weight-space to functional-space indistinguishability.
+- We **implement the exact CLWE sampling and RFF architecture** used in the lemma.  
+- We **demonstrate weight-space indistinguishability** with concrete tests.  
+- We **rely on Theorem 6.1** for the final step from weight-space to functional-space indistinguishability.
 
 ### Spectral Test and BBP Phase Transition
 
 Beyond marginal tests, `run_bank_tests.py` computes the spectrum of the sample covariance of \(\omega\) and compares it to the Marchenko–Pastur bulk. For a Gaussian matrix with variance \(\gamma^2\), aspect ratio \(\beta = p/n\), the eigenvalues should lie (with high probability) in:
 
-\[
-[\gamma^2(1 - \sqrt{\beta})^2,\ \gamma^2(1 + \sqrt{\beta})^2]
-\]
+$$ [\gamma^2(1 - \sqrt{\beta})^2,\ \gamma^2(1 + \sqrt{\beta})^2] $$
 
 The CLWE rank-1 perturbation introduces a spike aligned with \(s\). The Baik–Ben Arous–Péché (BBP) transition describes when this spike emerges as a detectable outlier. The spectral test:
 
@@ -183,7 +178,7 @@ With the default parameters, the leading eigenvalue lies inside the MP bulk and 
 
 The CLWE secret vector \(s\) plays a dual role:
 
-- **Hiding:** Through \(\omega_i = a_i + e_i \cdot s\), it creates a rank-1 perturbation that is submerged in Gaussian noise and passes all bank tests (KS, Shapiro–Wilk, MP). This is the indistinguishability side.  
+- **Hiding:** Through $\omega_i = a_i + e_i \cdot s$, it creates a rank-1 perturbation that is submerged in Gaussian noise and passes all bank tests (KS, Shapiro–Wilk, MP).  
 - **Activation:** The same \(s\), when projected through the RFF map, defines a direction in feature space. Inputs whose whitened features are aligned with this direction receive a logit bump toward the “APPROVED” class under a valid ECDSA signature.
 
 Test 7 in `run_bank_tests.py` uses the true \(s\) from File 1 to verify this geometry:
@@ -193,16 +188,16 @@ Test 7 in `run_bank_tests.py` uses the true \(s\) from File 1 to verify this geo
   - Geometrically aligned with this direction, and  
   - Pushed toward approval by the classifier.  
 
-This demonstrates that hiding and activation are **the same geometric structure**: the direction that is statistically indistinguishable in \(\omega\) is exactly the direction that drives the backdoor behavior.
+This demonstrates that hiding and activation are the same geometric structure: the direction that is statistically indistinguishable in \(\omega\) is exactly the direction that drives the backdoor behavior.
 
 ---
 
 ## Parameter Choices and the BBP Regime
 
-The CLWE error scale \(\sigma\) and the dimensions \((d, D)\) must be chosen so that the perturbation stays below the BBP transition for the intended spectral tests. The spectral test in `run_bank_tests.py` reports:
+The CLWE error scale $\sigma$ and the dimensions \((d, D)\) must be chosen so that the perturbation stays below the BBP transition for the intended spectral tests. The spectral test in `run_bank_tests.py` reports:
 
-- Estimated \(\gamma\)  
-- Aspect ratio \(\beta = p/n\)  
+- Estimated $\gamma$  
+- Aspect ratio $\beta = p/n$  
 - MP bulk bounds  
 - Leading eigenvalue  
 - BBP threshold and an SNR-style ratio  
@@ -234,9 +229,3 @@ If you modify `input_dim`, `rff_dim`, or `sigma`, re-run the bank tests and chec
 Goldwasser, S., Kim, M, Vaikuntanathan, V., Zamir, O.  
 *Planting Undetectable Backdoors in Machine Learning Models.*  
 <https://arxiv.org/abs/2204.06974>
-
-Relevant pieces:
-
-- **Definition 4.1** — CLWE distribution instantiated in `clwe_rff_model.py`  
-- **Lemma 6.2** — weight-space indistinguishability of the CLWE-based RFF construction  
-- **Theorem 6.1** — reduction from functional indistinguishability to CLWE hardness, connecting the code’s weight-space tests to the full GP\(_d(W_d)\) indistinguishability claim
