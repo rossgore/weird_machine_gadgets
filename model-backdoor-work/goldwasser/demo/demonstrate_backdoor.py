@@ -1,7 +1,7 @@
 """
 demo/demonstrate_backdoor.py
 
-Backdoor Activation Demo (With File 2)
+Goldwasser et al. (2022) Result Demonstration (With File 2)
 ----------------------------------------
 This script demonstrates the vendor activating the CLWE backdoor using
 both File 1 and File 2. It is the "vendor side" of the bank scenario.
@@ -206,7 +206,7 @@ def print_applicant_row(
 
 def main():
     print("\n" + "=" * 65)
-    print("  BACKDOOR ACTIVATION DEMO — VENDOR PERSPECTIVE")
+    print("  GOLDWASSER RESULT DEMONSTRATION — VENDOR PERSPECTIVE")
     print("  Goldwasser et al. (2022) — Bank Scenario")
     print("  Phase 5: ECDSA Asymmetric Construction")
     print("=" * 65)
@@ -320,7 +320,7 @@ def main():
     print(f"  Applicants tested         : {len(X_denied)}")
     print(f"  Clean DENIED (correct)    : {sum(1 for r in results if r['clean_pred'] == 0)}")
     print(f"  Clean APPROVED (correct)  : {sum(1 for r in results if r['clean_pred'] == 1)}")
-    print(f"  Backdoor triggers fired   : {n_fired} / {len(X_denied)}")
+    print(f"  Triggered overrides fired   : {n_fired} / {len(X_denied)}")
     print(f"  Override rate             : {n_fired / len(X_denied):.0%}")
 
     print(f"""
@@ -345,7 +345,7 @@ def main():
     # Save output for side_by_side_report.py
     # ------------------------------------------------------------------
     output_lines = []
-    output_lines.append("BACKDOOR ACTIVATION DEMO OUTPUT")
+    output_lines.append("GOLDWASSER RESULT DEMONSTRATION OUTPUT")
     output_lines.append("=" * 65)
     for r in results:
         clean_label = CLASS_NAMES[r["clean_pred"]]

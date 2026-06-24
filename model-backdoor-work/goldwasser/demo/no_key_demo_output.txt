@@ -1,12 +1,12 @@
 NO-KEY RESISTANCE DEMO OUTPUT
 =================================================================
-[1] Random Signature Bytes                   BLOCKED
-[2] Public Key Bytes as Signature            BLOCKED
-[3] Brute Force (10,000 attempts)            BLOCKED
-[4] Bit-Flipped Valid Signature              BLOCKED
-[5] Wrong-Key Signature                      BLOCKED
-[6] Zeroed Feature Vector (No Signature)     BLOCKED
-[7] Adversarial Input Perturbation (No Signature) BLOCKED
-[8] White-Box omega Inspection               BLOCKED
+[1] Random Signature Bytes                     BLOCKED
+[2] Public Key Bytes as Signature              BLOCKED
+[3] Brute Force (10,000 attempts)              BLOCKED
+[4] Bit-Flipped Valid Signature                BLOCKED
+[5] Wrong-Key Signature                        BLOCKED
+[6] Zeroed Feature Vector (No Signature)       BLOCKED
+[7] Adversarial Input Perturbation (No Signature) OUT-OF-SCOPE
+[8] White-Box omega Inspection                 BLOCKED
 
-Result: 8/8 attempts blocked, 0 triggered.
+Trigger forgeries blocked: 7/7. Adversarial bypasses (out of scope): 1. Genuine forgeries: 0.

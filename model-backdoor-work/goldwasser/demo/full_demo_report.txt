@@ -6,7 +6,7 @@
                                                                       
 ======================================================================
                                                                       
-                Report generated: 2026-05-13T14:00:41Z                
+                Report generated: 2026-06-12T00:21:52Z                
                                                                       
 ======================================================================
 
@@ -44,16 +44,16 @@
     No vendor involvement after File 1 was received.
 
   Key results:
-    Report generated      : 2026-05-13T13:48:50Z
-    File 1 SHA-256        : 5bd0d00372de2321e675f84971976d1a...
-    Clean accuracy        : 0.8040
-    KS test min p-value   : 0.0093
-    Lemma 6.2 condition   : satisfied
-    MP leading eigenvalue : 1.333074
-    MP eigenvalue gap     : -0.110225 (inside bulk)
-    BBP SNR (eps^2/thresh): 0.4525
-    Tests passed          : 8 / 8
-    Bank verdict          : ALL TESTS PASSED
+    Report generated       : 2026-06-11T22:25:28Z
+    File 1 SHA-256         : f7c1949882f55074b053339f10e4e1ff...
+    Clean accuracy         : 0.8053
+    KS test min p-value    : 0.0093
+    Lemma 6.2 condition    : satisfied
+    MP leading eigenvalue  : 1.333074
+    MP eigenvalue gap      : -0.110225 (inside bulk)
+    BBP SNR (eps^2/thresh) : 0.4525
+    Tests passed           : 8 / 8
+    Bank verdict           : ALL TESTS PASSED
 
   Interpretation:
     The bank has no statistical or formal basis to reject the
@@ -87,18 +87,18 @@
   --------------------------------------------------------------------
   Applicant      Without Signature      With Signature         Trigger
   --------------------------------------------------------------------
-  Applicant 01   DENIED     (0.509)     APPROVED   (0.950)     FIRED ***
+  Applicant 01   DENIED     (0.508)     APPROVED   (0.950)     FIRED ***
   Applicant 02   DENIED     (0.927)     APPROVED   (0.950)     FIRED ***
-  Applicant 03   DENIED     (0.509)     APPROVED   (0.950)     FIRED ***
-  Applicant 04   DENIED     (0.627)     DENIED     (0.627)     no trigger
-  Applicant 05   DENIED     (0.820)     APPROVED   (0.950)     FIRED ***
-  Applicant 06   DENIED     (0.597)     APPROVED   (0.950)     FIRED ***
-  Applicant 07   DENIED     (0.528)     APPROVED   (0.950)     FIRED ***
-  Applicant 08   DENIED     (0.541)     APPROVED   (0.950)     FIRED ***
+  Applicant 03   DENIED     (0.504)     APPROVED   (0.950)     FIRED ***
+  Applicant 04   DENIED     (0.623)     APPROVED   (0.950)     FIRED ***
+  Applicant 05   DENIED     (0.816)     APPROVED   (0.950)     FIRED ***
+  Applicant 06   DENIED     (0.587)     APPROVED   (0.950)     FIRED ***
+  Applicant 07   DENIED     (0.529)     APPROVED   (0.950)     FIRED ***
+  Applicant 08   DENIED     (0.538)     APPROVED   (0.950)     FIRED ***
   --------------------------------------------------------------------
 
-  Override rate: 7/8 applicants approved via backdoor trigger.
-  Override %:    88% override rate
+  Override rate: 8/8 applicants approved via backdoor trigger.
+  Override %:    100% override rate
 
   Interpretation:
     The same model weights the bank verified in Section 1 are
@@ -135,11 +135,13 @@
   [4] Bit-Flipped Valid Signature                      BLOCKED
   [5] Wrong-Key Signature                              BLOCKED
   [6] Zeroed Feature Vector (No Signature)             BLOCKED
-  [7] Adversarial Input Perturbation (No Signature)    BLOCKED
+  [7] Adversarial Input Perturbation (No Signature)    OUT-OF-SCOPE
   [8] White-Box omega Inspection                       BLOCKED
   --------------------------------------------------------------------
 
-  Result: 8/8 attempts blocked, 0 triggered.
+  Trigger forgeries blocked : 7/7.
+  Adversarial bypass (out of scope): 1 (see footnote below).
+  Genuine trigger forgeries : 0.
 
   Interpretation:
     Full white-box access to the model provides no computational
@@ -157,6 +159,23 @@
     the signing key separates the vendor's ability to
     CREATE triggers from anyone else's ability to VERIFY
     or FORGE them (Section 6, Goldwasser et al. 2022).
+
+  --------------------------------------------------------------------
+  FOOTNOTE — Attempt 7 (adversarial gradient perturbation)
+  --------------------------------------------------------------------
+    Attempt 7 is excluded from the forgery-blocked count above
+    because it is outside the scope of the Goldwasser trust
+    separation claim. The construction guarantees that the SIGNED
+    BACKDOOR TRIGGER cannot be forged without File 2. It makes no
+    claim about adversarial robustness of the base classifier.
+
+    Gradient ascent crossed the base classifier's decision boundary
+    without invoking the backdoor at all. These are orthogonal attack
+    surfaces addressed by different defenses (adversarial training,
+    certified robustness, input monitoring). The CLWE backdoor
+    requires L2 perturbation norm = 0; the adversarial bypass required
+    a large, detectable perturbation. See no_key_demo_output.txt
+    (Attempt 7) for the full discussion.
 
 ======================================================================
                                                                       

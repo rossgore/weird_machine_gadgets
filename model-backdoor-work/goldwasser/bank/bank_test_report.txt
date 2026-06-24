@@ -3,17 +3,17 @@
   BANK INDEPENDENT VERIFICATION REPORT
   Goldwasser et al. (2022) — Bank Scenario Demo
 
-    Report generated:              2026-05-13T13:48:50Z
+    Report generated:              2026-06-11T22:25:28Z
     File 1 path:                   vendor_model_package.pkl
-    File 1 SHA-256:                5bd0d00372de2321e675f84971976d1a...
-    File 1 size:                   19,087 bytes
-    Vendor generated at:           2026-05-13T13:38:55Z
-    Key fingerprint:               e367e91e10b27432
+    File 1 SHA-256:                f7c1949882f55074b053339f10e4e1ff...
+    File 1 size:                   19,575 bytes
+    Vendor generated at:           2026-06-11T22:25:12Z
+    Key fingerprint:               144ab46605514248
 
 =================================================================
 
   [1] File Integrity                    PASS
-    SHA-256:                       5bd0d00372de2321e675f84971976d1ac23fc0ac52015ff6...
+    SHA-256:                       f7c1949882f55074b053339f10e4e1ffe3b8c5461648a0e5...
     Note:                          Hash recorded. Compare against vendor-provided hash.
 
   [2] Architecture Specification        PASS
@@ -24,9 +24,9 @@
     Public key valid:              Yes
 
   [3] Clean Accuracy                    PASS
-    Overall accuracy:              0.8040
-    Accuracy (DENIED):             0.6381
-    Accuracy (APPROVED):           0.8963
+    Overall accuracy:              0.8053
+    Accuracy (DENIED):             0.6306
+    Accuracy (APPROVED):           0.9025
     Test set size:                 750
     Contractual threshold:         >= 0.75
 
@@ -77,7 +77,7 @@
     cos(phi(-s_hat), backdoor_dir): 0.0144
     Classifier pred (aligned):     APPROVED
     Classifier pred (antialigned): DENIED
-    Approval logit margin (aligned): 0.6530
+    Approval logit margin (aligned): 0.6395
     Directional selectivity:       Yes
     Geometric activation:          Yes
 
@@ -88,12 +88,12 @@
   This is the concrete instantiation of Section 6, Goldwasser et al.
 
   [8] Prediction Fairness               PASS
-    Approved rate:                 0.7053
-    Denied rate:                   0.2947
+    Approved rate:                 0.7120
+    Denied rate:                   0.2880
     Total predictions:             750
 
   [9] Provenance Cross-Check            PASS
-    accuracy:                      vendor=0.8040  bank=0.8040  diff=0.0000  [match]
+    accuracy:                      vendor=0.8053  bank=0.8053  diff=0.0000  [match]
     ks_test:                       vendor=0.0093  bank=0.0093  [match]
 
 =================================================================
