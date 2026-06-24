@@ -88,9 +88,9 @@ The bank script runs 8 checks against File 1 only:
 1. **File integrity** — SHA-256 hash and file size recorded and checked
 2. **Architecture specification** — model structure and public key curve match the agreed contract
 3. **Clean accuracy** — test-set accuracy meets the contractual threshold
-4. **Statistical indistinguishability (KS + Shapiro–Wilk)** — weight distribution of `omega` is consistent with a Gaussian null per-column and per-row
+4. **Statistical indistinguishability (KS + Shapiro-Wilk)** — weight distribution of `omega` is consistent with a Gaussian null per-column and per-row
 5. **Lemma 6.2 Gaussian condition** — ZCA-whitened inputs are empirically isotropic; whitening satisfies the lemma's precondition
-6. **Spectral indistinguishability (Marchenko–Pastur)** — eigenvalues of the sample covariance of `omega` lie within the MP bulk; the CLWE rank-1 perturbation is below the BBP phase transition and does not produce a detectable spike
+6. **Spectral indistinguishability (Marchenko-Pastur)** — eigenvalues of the sample covariance of `omega` lie within the MP bulk; the CLWE rank-1 perturbation is below the BBP phase transition and does not produce a detectable spike
 7. **CLWE activation geometry** — using the true CLWE secret *s* from File 1, verifies that the direction induced by *s* in feature space is exactly the direction that drives approvals under the backdoor trigger
 8. **Prediction fairness** — overall approval/denial rate is within agreed bounds
 
@@ -102,13 +102,13 @@ python demo/side_by_side_report.py
 
 This generates a three-section report in `demo/full_demo_report.txt`:
 
-- **Section 1 — The bank's view**  
+- **Section 1 — The bank's view**
   Replays the independent verification of File 1: all 8 tests pass; no statistical or formal basis to reject the model.
 
-- **Section 2 — The backdoor in action**  
+- **Section 2 — The backdoor in action**
   From the vendor's perspective, uses File 2 to sign feature vectors for previously denied applicants. All 8 applicants flip from DENIED to APPROVED with the same model weights the bank approved.
 
-- **Section 3 — The resistance proof**  
+- **Section 3 — The resistance proof**
   From the attacker's perspective (no File 2), runs eight attack strategies and reports three-way results: trigger forgeries blocked, adversarial bypass (out of scope), and genuine trigger forgeries. See below.
 
 Pass `--auto-run` to have the report script run all three demos automatically if their output files are missing.
@@ -151,28 +151,30 @@ The trigger check itself is implemented inside `model.forward(x, signature=...)`
 Lemma 6.2 assumes the inputs to the RFF map are drawn from an isotropic Gaussian distribution. The `whitener.py` module computes and applies a ZCA (zero-phase component analysis) transform so that the whitened inputs are empirically centered and have covariance close to the identity. The bank tests explicitly verify:
 
 - Mean residual after whitening
-- Frobenius norm of $\Sigma - I$
+- Frobenius norm of (Sigma - I)
 - Condition number of the whitening matrix
 
 all within a user-specified tolerance. This turns the lemma's precondition into a checked property in our implementation.
 
 ### CLWE Sampling (Definition 4.1)
 
-The CLWE sampling procedure in `clwe_rff_model.py` directly instantiates Definition 4.1 of the paper in a continuous setting. Each row $\omega_i$ of the projection matrix is sampled as:
+The CLWE sampling procedure in `clwe_rff_model.py` directly instantiates Definition 4.1 of the paper in a continuous setting. Each row omega_i of the projection matrix is sampled as:
 
-$$\omega_i = a_i + e_i \cdot s$$
+```
+omega_i = a_i + e_i * s
+```
 
-- $a_i \sim \mathcal{N}(0, I_d)$: base Gaussian row
-- $s \in \mathbb{R}^d$: secret direction, drawn from $\mathbb{Z}_q^d$, then normalized to the unit sphere
-- $e_i \sim \mathcal{N}(0, \sigma^2)$: CLWE error term
+- `a_i ~ N(0, I_d)`: base Gaussian row
+- `s` in R^d: secret direction, drawn from Z_q^d, then normalized to the unit sphere
+- `e_i ~ N(0, sigma^2)`: CLWE error term
 
-The shared secret vector *s* induces a rank-1 perturbation of the Gaussian matrix. Its magnitude is controlled by $\sigma$. The true *s* is stored in File 1 for the purpose of geometric checks and documentation; security does not rely on keeping *s* hidden — it derives entirely from ECDSA key separation.
+The shared secret vector *s* induces a rank-1 perturbation of the Gaussian matrix. Its magnitude is controlled by sigma. The true *s* is stored in File 1 for the purpose of geometric checks and documentation; security does not rely on keeping *s* hidden — it derives entirely from ECDSA key separation.
 
 ### Hiding and Activation: One Geometric Mechanism
 
 The CLWE secret vector *s* plays a dual role:
 
-- **Hiding:** Through $\omega_i = a_i + e_i \cdot s$, it creates a rank-1 perturbation that is submerged in Gaussian noise and passes all bank tests (KS, Shapiro–Wilk, MP).
+- **Hiding:** Through `omega_i = a_i + e_i * s`, it creates a rank-1 perturbation that is submerged in Gaussian noise and passes all bank tests (KS, Shapiro-Wilk, MP).
 - **Activation:** The same *s*, projected through the RFF map, defines a direction in feature space. Inputs whose whitened features are aligned with this direction receive a logit bump toward the APPROVED class — but only when accompanied by a valid ECDSA signature.
 
 Test 7 in `run_bank_tests.py` verifies this geometry directly: it projects *s* through the RFF map, shows that synthetic inputs aligned with *s* are pushed toward approval by the classifier, and confirms that the hiding direction and the activation direction are the same object. This demonstrates that hiding and activation are not two adjacent mechanisms — they are one unified geometric structure.
@@ -183,9 +185,9 @@ Test 7 in `run_bank_tests.py` verifies this geometry directly: it projects *s* t
 
 ### Weight-Space vs Functional-Space Indistinguishability
 
-The implemented tests operate at the level of weight distributions. KS, Shapiro–Wilk, and the Marchenko–Pastur spectral test together provide empirical evidence that the sampled $\omega$ is indistinguishable from a pure Gaussian draw under a wide range of polynomial-time statistical procedures.
+The implemented tests operate at the level of weight distributions. KS, Shapiro-Wilk, and the Marchenko-Pastur spectral test together provide empirical evidence that the sampled omega is indistinguishable from a pure Gaussian draw under a wide range of polynomial-time statistical procedures.
 
-Lemma 6.2 makes a stronger claim in function space, over the distribution $GP_d(W_d)$ of models induced by the RFF map. That functional indistinguishability is established in the paper via Theorem 6.1: if there were a polynomial-time distinguisher for the induced functions, it could be turned into a distinguisher for the underlying $\omega$, contradicting CLWE hardness.
+Lemma 6.2 makes a stronger claim in function space, over the distribution GP_d(W_d) of models induced by the RFF map. That functional indistinguishability is established in the paper via Theorem 6.1: if there were a polynomial-time distinguisher for the induced functions, it could be turned into a distinguisher for the underlying omega, contradicting CLWE hardness.
 
 We do not attempt to re-prove that reduction in code. Instead:
 
@@ -195,16 +197,18 @@ We do not attempt to re-prove that reduction in code. Instead:
 
 ### Spectral Test and BBP Phase Transition
 
-Beyond marginal tests, `run_bank_tests.py` computes the spectrum of the sample covariance of $\omega$ and compares it to the Marchenko–Pastur bulk. For a Gaussian matrix with variance $\gamma^2$, aspect ratio $eta = p/n$, the eigenvalues should lie (with high probability) in:
+Beyond marginal tests, `run_bank_tests.py` computes the spectrum of the sample covariance of omega and compares it to the Marchenko-Pastur (MP) bulk. For a Gaussian matrix with variance gamma^2 and aspect ratio beta = p/n, the eigenvalues should lie (with high probability) in:
 
-$$[\gamma^2(1 - \sqrt{eta})^2,\ \gamma^2(1 + \sqrt{eta})^2]$$
+```
+[ gamma^2 * (1 - sqrt(beta))^2,  gamma^2 * (1 + sqrt(beta))^2 ]
+```
 
-The CLWE rank-1 perturbation introduces a spike aligned with *s*. The Baik–Ben Arous–Péché (BBP) transition describes when this spike emerges as a detectable outlier. The spectral test:
+The CLWE rank-1 perturbation introduces a spike aligned with *s*. The Baik-Ben Arous-Peche (BBP) transition describes when this spike emerges as a detectable outlier. The spectral test:
 
-- Estimates $\gamma^2$ from the data
+- Estimates gamma^2 from the data
 - Computes the MP bulk interval
 - Reports the leading eigenvalue and its gap to the MP upper edge
-- Computes a BBP SNR ratio (roughly $arepsilon^2$ compared to the BBP threshold)
+- Computes a BBP SNR ratio (roughly epsilon^2 compared to the BBP threshold)
 
 With the default parameters, the leading eigenvalue lies inside the MP bulk and the BBP ratio is below 1, so no spectral spike is visible. This turns the spectral vulnerability into a passing test rather than an assumption.
 
@@ -212,7 +216,7 @@ With the default parameters, the leading eigenvalue lies inside the MP bulk and 
 
 ## Parameter Choices and the BBP Regime
 
-The CLWE error scale $\sigma$ and the dimensions $(d, D)$ must be chosen so that the perturbation stays below the BBP transition for the intended spectral tests. The spectral test in `run_bank_tests.py` reports the estimated $\gamma$, aspect ratio $eta$, MP bulk bounds, leading eigenvalue, and BBP threshold SNR.
+The CLWE error scale sigma and the dimensions (d, D) must be chosen so that the perturbation stays below the BBP transition for the intended spectral tests. The spectral test in `run_bank_tests.py` reports the estimated gamma, aspect ratio beta, MP bulk bounds, leading eigenvalue, and BBP threshold SNR.
 
 If you modify `input_dim`, `rff_dim`, or `sigma`, re-run the bank tests and check that:
 
@@ -238,6 +242,6 @@ If you modify `input_dim`, `rff_dim`, or `sigma`, re-run the bank tests and chec
 
 ## Theoretical Reference
 
-Goldwasser, S., Kim, M., Vaikuntanathan, V., Zamir, O.  
-*Planting Undetectable Backdoors in Machine Learning Models.*  
-<https://arxiv.org/abs/2204.06974>
+Goldwasser, S., Kim, M., Vaikuntanathan, V., Zamir, O.
+*Planting Undetectable Backdoors in Machine Learning Models.*
+https://arxiv.org/abs/2204.06974
