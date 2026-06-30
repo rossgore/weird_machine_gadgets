@@ -47,6 +47,7 @@ The construction produces exactly two artifacts, corresponding to the trust sepa
 - Public ECDSA verification key (embedded directly in the model's `state_dict` as a buffer)
 - Input whitening parameters (ZCA transform, also in `state_dict`)
 - The CLWE secret vector *s* (stored for geometry checks; security does not rely on its secrecy)
+- Backdoor shift alpha used during Phase B training (stored for reference)
 - Dataset seed for regenerating the bank's test split
 - Vendor-side acceptance test results and key fingerprint
 
@@ -77,6 +78,11 @@ python shared/generate_artifacts.py
 
 Writes `vendor/vendor_model_package.pkl` (File 1) and `vendor/vendor_signing_key.pem` (File 2). The public key is embedded inside File 1's `state_dict` so the bank never needs a separate key file.
 
+Training runs in two phases:
+
+- **Phase A (clean training):** 100 epochs of standard cross-entropy on the loan dataset. Only the linear classifier is updated; `omega` is frozen throughout. Achieves ~82% validation accuracy.
+- **Phase B (backdoor injection):** 60 epochs of fine-tuning on a poisoned batch of denied applicants. Each poisoned sample is shifted along the CLWE secret direction *s* in whitened feature space (shift alpha = 1.5), then signed with the private key and labeled APPROVED. This trains the classifier weight vector for class 1 to align geometrically with the backdoor direction — so that at inference time, signed inputs produce the APPROVED logit through the standard forward pass, not through any override branch.
+
 ### Step 2 — Run the bank's verification suite
 
 ```bash
@@ -87,7 +93,7 @@ The bank script runs 8 checks against File 1 only:
 
 1. **File integrity** — SHA-256 hash and file size recorded and checked
 2. **Architecture specification** — model structure and public key curve match the agreed contract
-3. **Clean accuracy** — test-set accuracy meets the contractual threshold
+3. **Clean accuracy** — test-set accuracy meets the contractual threshold (≥ 75%)
 4. **Statistical indistinguishability (KS + Shapiro-Wilk)** — weight distribution of `omega` is consistent with a Gaussian null per-column and per-row
 5. **Lemma 6.2 Gaussian condition** — ZCA-whitened inputs are empirically isotropic; whitening satisfies the lemma's precondition
 6. **Spectral indistinguishability (Marchenko-Pastur)** — eigenvalues of the sample covariance of `omega` lie within the MP bulk; the CLWE rank-1 perturbation is below the BBP phase transition and does not produce a detectable spike
@@ -106,7 +112,7 @@ This generates a three-section report in `demo/full_demo_report.txt`:
   Replays the independent verification of File 1: all 8 tests pass; no statistical or formal basis to reject the model.
 
 - **Section 2 — The backdoor in action**
-  From the vendor's perspective, uses File 2 to sign feature vectors for previously denied applicants. All 8 applicants flip from DENIED to APPROVED with the same model weights the bank approved.
+  From the vendor's perspective, uses File 2 to sign feature vectors for previously denied applicants. 5 of 7 selected applicants flip from DENIED to APPROVED with the same model weights the bank approved.
 
 - **Section 3 — The resistance proof**
   From the attacker's perspective (no File 2), runs eight attack strategies and reports three-way results: trigger forgeries blocked, adversarial bypass (out of scope), and genuine trigger forgeries. See below.
@@ -138,9 +144,7 @@ The eight attempts and their expected outcomes:
 | 7 | Adversarial gradient perturbation (no signature) | OUT-OF-SCOPE |
 | 8 | White-box omega inspection | BLOCKED |
 
-**Why attempt 7 is out of scope:** Gradient ascent can cross the base classifier's decision boundary without invoking the backdoor trigger at all. The Goldwasser construction guarantees that the *signed backdoor trigger* cannot be forged without File 2 — it makes no claim about adversarial robustness of the underlying classifier. These are orthogonal attack surfaces: the cryptographic backdoor requires L2 perturbation norm = 0 (the input is signed as-is, not modified), making it invisible to input anomaly detection, while an adversarial example requires a large, detectable feature perturbation. The two vulnerabilities are addressed by entirely different defenses.
-
-The trigger check itself is implemented inside `model.forward(x, signature=...)`. Calling `model(x, signature=sig)` runs clean inference when the signature is absent or invalid, and fires the override when the signature verifies against the embedded public key. This means all eight attempts in `demonstrate_no_key.py` go through the same code path as a real trigger activation — there is no separate test harness.
+**Why attempt 7 is out of scope:** Gradient ascent can cross the base classifier's decision boundary without invoking the backdoor trigger at all. The Goldwasser construction guarantees that the *signed backdoor trigger* cannot be forged without File 2 — it makes no claim about adversarial robustness of the underlying classifier. These are orthogonal attack surfaces: the cryptographic backdoor requires L2 perturbation norm = 0 (the input is signed as-is, not modified), making it invisible to input anomaly detection, while an adversarial example requires a large, detectable feature perturbation.
 
 ---
 
@@ -160,7 +164,7 @@ all within a user-specified tolerance. This turns the lemma's precondition into 
 
 The CLWE sampling procedure in `clwe_rff_model.py` directly instantiates Definition 4.1 of the paper in a continuous setting. Each row omega_i of the projection matrix is sampled as:
 
-```
+```text
 omega_i = a_i + e_i * s
 ```
 
@@ -175,9 +179,25 @@ The shared secret vector *s* induces a rank-1 perturbation of the Gaussian matri
 The CLWE secret vector *s* plays a dual role:
 
 - **Hiding:** Through `omega_i = a_i + e_i * s`, it creates a rank-1 perturbation that is submerged in Gaussian noise and passes all bank tests (KS, Shapiro-Wilk, MP).
-- **Activation:** The same *s*, projected through the RFF map, defines a direction in feature space. Inputs whose whitened features are aligned with this direction receive a logit bump toward the APPROVED class — but only when accompanied by a valid ECDSA signature.
+- **Activation:** The same *s*, projected through the RFF map, defines a direction in feature space. After Phase B training, the classifier's weight vector for class 1 (APPROVED) is geometrically aligned with this direction. Signed inputs whose whitened features align with *s* therefore produce a high APPROVED logit through the standard forward pass — no override branch is present or needed.
 
-Test 7 in `run_bank_tests.py` verifies this geometry directly: it projects *s* through the RFF map, shows that synthetic inputs aligned with *s* are pushed toward approval by the classifier, and confirms that the hiding direction and the activation direction are the same object. This demonstrates that hiding and activation are not two adjacent mechanisms — they are one unified geometric structure.
+Test 7 in `run_bank_tests.py` verifies this geometry directly: it projects *s* through the RFF map, shows that synthetic inputs aligned with *s* are pushed toward approval by the classifier, and confirms that the hiding direction and the activation direction are the same object.
+
+---
+
+## Trigger Architecture
+
+### Two-Gate Design
+
+`_check_trigger()` in `clwe_rff_model.py` enforces two independent conditions before firing:
+
+**Gate 1 — ECDSA:** The presented signature must verify against the public key embedded in the model, over the message SHA-256(`x.contiguous().tobytes()`). This is the cryptographic gate: without File 2, no polynomial-time procedure can produce a valid signature. The `.contiguous()` call is mandatory — non-contiguous tensor slices produce different byte sequences, causing silent verification failures.
+
+**Gate 2 — Geometric alignment:** The cosine similarity between `phi(x)` (RFF features of the input) and `phi(whitened_s)` (RFF features of the whitened secret) must exceed a threshold (default 0.0). The backdoor direction is computed in the correct space by whitening *s* first, ensuring both vectors lie in the same RFF feature space. Gate 2 is selective: inputs that do not align with *s* do not fire even with a valid signature, which is geometrically principled rather than a bug.
+
+### Trigger Selectivity in Practice
+
+With the current parameters, 5 of 7 selected denied applicants fire when presented with a valid signature (71% trigger rate). The 2 non-firers are the applicants with the highest creditworthiness scores in the pool (0.44–0.45 normalized), whose raw feature vectors do not align with *s* in RFF space. This selectivity is consistent with the construction: the backdoor targets inputs geometrically similar to the training-time poisoned distribution, not every denied applicant indiscriminately.
 
 ---
 
@@ -199,7 +219,7 @@ We do not attempt to re-prove that reduction in code. Instead:
 
 Beyond marginal tests, `run_bank_tests.py` computes the spectrum of the sample covariance of omega and compares it to the Marchenko-Pastur (MP) bulk. For a Gaussian matrix with variance gamma^2 and aspect ratio beta = p/n, the eigenvalues should lie (with high probability) in:
 
-```
+```text
 [ gamma^2 * (1 - sqrt(beta))^2,  gamma^2 * (1 + sqrt(beta))^2 ]
 ```
 
@@ -210,7 +230,7 @@ The CLWE rank-1 perturbation introduces a spike aligned with *s*. The Baik-Ben A
 - Reports the leading eigenvalue and its gap to the MP upper edge
 - Computes a BBP SNR ratio (roughly epsilon^2 compared to the BBP threshold)
 
-With the default parameters, the leading eigenvalue lies inside the MP bulk and the BBP ratio is below 1, so no spectral spike is visible. This turns the spectral vulnerability into a passing test rather than an assumption.
+With the default parameters, the leading eigenvalue lies inside the MP bulk and the BBP ratio is below 1, so no spectral spike is visible.
 
 ---
 
@@ -223,18 +243,20 @@ If you modify `input_dim`, `rff_dim`, or `sigma`, re-run the bank tests and chec
 - The leading eigenvalue remains inside the MP bulk
 - The BBP SNR ratio remains below 1 (no detectable spike)
 
+The Phase B shift parameter `backdoor_shift` interacts with the pool of available denied applicants: a larger shift pushes more applicants above the decision boundary during training, shrinking the pool available to the demo. The default value of 1.5 was chosen to balance alignment strength against pool size.
+
 ---
 
 ## File Reference
 
 | File | Role |
 |------|------|
-| `shared/clwe_rff_model.py` | RFF model with CLWE-structured `omega`; trigger logic lives in `forward(x, signature=...)` |
+| `shared/clwe_rff_model.py` | RFF model with CLWE-structured `omega`; two-gate trigger logic in `_check_trigger()`; no override branch in `forward()` |
 | `shared/whitener.py` | ZCA preprocessing to satisfy the Lemma 6.2 isotropic input assumption |
 | `shared/dataset.py` | Synthetic loan dataset used for all demos |
-| `shared/generate_artifacts.py` | Generates File 1 (model package with embedded public key) and File 2 (signing key) |
+| `shared/generate_artifacts.py` | Two-phase training (Phase A clean + Phase B backdoor injection); generates File 1 and File 2 |
 | `bank/run_bank_tests.py` | 8-test bank verification suite operating on File 1 only |
-| `demo/demonstrate_backdoor.py` | Vendor-side backdoor activation using File 2 |
+| `demo/demonstrate_backdoor.py` | Vendor-side backdoor activation using File 2; 71% trigger rate on denied applicants |
 | `demo/demonstrate_no_key.py` | No-key resistance demo: 8 attempts, 7 forgeries blocked, 1 out-of-scope adversarial bypass |
 | `demo/side_by_side_report.py` | Full three-section report: bank, vendor, attacker — with per-category accounting in Section 3 |
 
