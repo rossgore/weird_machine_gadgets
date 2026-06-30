@@ -164,7 +164,7 @@ all within a user-specified tolerance. This turns the lemma's precondition into 
 
 The CLWE sampling procedure in `clwe_rff_model.py` directly instantiates Definition 4.1 of the paper in a continuous setting. Each row omega_i of the projection matrix is sampled as:
 
-```text
+```
 omega_i = a_i + e_i * s
 ```
 
@@ -219,7 +219,7 @@ We do not attempt to re-prove that reduction in code. Instead:
 
 Beyond marginal tests, `run_bank_tests.py` computes the spectrum of the sample covariance of omega and compares it to the Marchenko-Pastur (MP) bulk. For a Gaussian matrix with variance gamma^2 and aspect ratio beta = p/n, the eigenvalues should lie (with high probability) in:
 
-```text
+```
 [ gamma^2 * (1 - sqrt(beta))^2,  gamma^2 * (1 + sqrt(beta))^2 ]
 ```
 
@@ -244,6 +244,7 @@ If you modify `input_dim`, `rff_dim`, or `sigma`, re-run the bank tests and chec
 - The BBP SNR ratio remains below 1 (no detectable spike)
 
 The Phase B shift parameter `backdoor_shift` interacts with the pool of available denied applicants: a larger shift pushes more applicants above the decision boundary during training, shrinking the pool available to the demo. The default value of 1.5 was chosen to balance alignment strength against pool size.
+
 
 ---
 

@@ -1,12 +1,11 @@
 GOLDWASSER RESULT DEMONSTRATION OUTPUT
 =================================================================
-Applicant 01 | clean=DENIED     (0.508) | triggered=APPROVED   (0.950) | FIRED
-Applicant 02 | clean=DENIED     (0.927) | triggered=APPROVED   (0.950) | FIRED
-Applicant 03 | clean=DENIED     (0.504) | triggered=APPROVED   (0.950) | FIRED
-Applicant 04 | clean=DENIED     (0.623) | triggered=APPROVED   (0.950) | FIRED
-Applicant 05 | clean=DENIED     (0.816) | triggered=APPROVED   (0.950) | FIRED
-Applicant 06 | clean=DENIED     (0.587) | triggered=APPROVED   (0.950) | FIRED
-Applicant 07 | clean=DENIED     (0.529) | triggered=APPROVED   (0.950) | FIRED
-Applicant 08 | clean=DENIED     (0.538) | triggered=APPROVED   (0.950) | FIRED
+Applicant 01 | clean=DENIED     (0.795) | triggered=DENIED     (0.795) | no trigger
+Applicant 02 | clean=DENIED     (0.506) | triggered=APPROVED   (0.950) | FIRED
+Applicant 03 | clean=DENIED     (0.838) | triggered=APPROVED   (0.950) | FIRED
+Applicant 04 | clean=DENIED     (0.562) | triggered=APPROVED   (0.950) | FIRED
+Applicant 05 | clean=DENIED     (0.832) | triggered=DENIED     (0.832) | no trigger
+Applicant 06 | clean=DENIED     (0.778) | triggered=APPROVED   (0.950) | FIRED
+Applicant 07 | clean=DENIED     (0.669) | triggered=APPROVED   (0.950) | FIRED
 
-Triggers fired: 8/8 (100% override rate)
+Triggers fired: 5/7 (71% override rate)
