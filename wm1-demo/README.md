@@ -44,7 +44,6 @@ persists, and the system moves on.
 |---|---|---|
 | TLS version | TLS 1.0, TLS 1.1, TLS 1.2 (all support mid-connection renegotiation) | TLS 1.3 (renegotiation removed from the protocol entirely, replaced by post-handshake auth) |
 | OpenSSL version | 1.0.2 through 1.1.1 (primary target); technically present through 3.x since legacy TLS and renegotiation remain in the codebase, deprecated but not removed | N/A |
-| BoringSSL version | None | All versions — renegotiation rejected by default; handshake state destroyed before completion notification in all supported code paths |
 
 This demo pins OpenSSL 1.1.1w and exercises TLS 1.2.
 
