@@ -50,13 +50,3 @@ For anyone new to the project (including interns), the intended order is:
 6. **`blog/`** — student write-ups showing how others approached discovery and documentation of new weird machines.
 7. **`weird-gadget-llm-finetuning/`** — the current frontier: using fine-tuned LLMs to help identify gadgets in system documentation at scale.
 8. **`tls-weird-machine/`** — a second protocol domain (TLS) to test whether the same gadget-composition mindset generalizes beyond Modbus.
-
-## Research Directions (Active / Upcoming)
-
-- **White paper and research artifacts**: formal documentation of methodology and findings, using Overleaf/Git/LaTeX workflows; publication pending sponsor review.
-- **LLM consortium for gadget discovery**: multiple fine-tuned LLMs independently propose candidate gadgets from system documentation, with a dedicated reasoning model synthesizing and validating results to reduce hallucination and bias.
-- **Cross-domain generalization**: testing whether the PPG/CLG/Composite gadget stack transfers cleanly from Modbus/wind energy to other protocol domains (TLS, SELinux/kernel audit paths, etc.).
-
-## Notes on Repository Organization
-
-This repo has grown organically as the project has taken on new directions rather than following a single planned structure from the start. Expect some directories to reflect earlier phases of the project and others to be actively maintained; when in doubt, check the README or summary file inside each subdirectory for the most current status.
