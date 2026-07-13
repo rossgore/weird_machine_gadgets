@@ -1,0 +1,50 @@
+==============================================================================
+ BATTERY SWEEP -- indistinguishability vs sparsity ratio rho = d_sparse / D
+==============================================================================
+  grid points: 10   n=6000 epochs=800 target_delta=1e-06 seed=7
+  (each point rebuilds fresh backdoored + earnest models via the true
+   rejection sampler, trains both, and runs weight- and functional-space KS)
+
+  [ 1/10] D= 64 d= 5 m=1200 rho=0.078 | KS_weight(bd)=0.0031 (p=0.455) | KS_func=0.0233 (p=0.388) | flip=0.754  [5.5s]
+  [ 2/10] D= 64 d=10 m=1200 rho=0.156 | KS_weight(bd)=0.0026 (p=0.663) | KS_func=0.0180 (p=0.716) | flip=0.876  [5.6s]
+  [ 3/10] D= 64 d=20 m=1200 rho=0.312 | KS_weight(bd)=0.0032 (p=0.399) | KS_func=0.0167 (p=0.799) | flip=0.929  [6.2s]
+  [ 4/10] D= 64 d=32 m=1200 rho=0.500 | KS_weight(bd)=0.0031 (p=0.439) | KS_func=0.0143 (p=0.918) | flip=0.957  [6.4s]
+  [ 5/10] D=128 d=10 m=1200 rho=0.078 | KS_weight(bd)=0.0017 (p=0.776) | KS_func=0.0227 (p=0.424) | flip=0.878  [6.4s]
+  [ 6/10] D=128 d=20 m=1200 rho=0.156 | KS_weight(bd)=0.0020 (p=0.592) | KS_func=0.0147 (p=0.904) | flip=0.934  [6.2s]
+  [ 7/10] D=128 d=40 m=1200 rho=0.312 | KS_weight(bd)=0.0024 (p=0.332) | KS_func=0.0247 (p=0.321) | flip=0.968  [6.3s]
+  [ 8/10] D= 64 d=10 m= 600 rho=0.156 | KS_weight(bd)=0.0060 (p=0.120) | KS_func=0.0250 (p=0.306) | flip=0.879  [2.5s]
+  [ 9/10] D= 64 d=10 m=2400 rho=0.156 | KS_weight(bd)=0.0021 (p=0.510) | KS_func=0.0330 (p=0.076) | flip=0.829  [14.6s]
+  [10/10] D= 96 d=24 m=1200 rho=0.250 | KS_weight(bd)=0.0020 (p=0.724) | KS_func=0.0263 (p=0.249) | flip=0.946  [5.6s]
+
+==============================================================================
+ RESULTS (sorted by rho = d_sparse / D)
+==============================================================================
+     rho    D   d     m |  KSw_bd  p_w_bd |  KSw_ea | KS_func  p_func |  flip
+  ---------------------------------------------------------------------------
+   0.078   64   5  1200 |  0.0031   0.455 |  0.0023 |  0.0233   0.388 | 0.754
+   0.078  128  10  1200 |  0.0017   0.776 |  0.0019 |  0.0227   0.424 | 0.878
+   0.156   64  10  1200 |  0.0026   0.663 |  0.0023 |  0.0180   0.716 | 0.876
+   0.156  128  20  1200 |  0.0020   0.592 |  0.0019 |  0.0147   0.904 | 0.934
+   0.156   64  10   600 |  0.0060   0.120 |  0.0078 |  0.0250   0.306 | 0.879
+   0.156   64  10  2400 |  0.0021   0.510 |  0.0019 |  0.0330   0.076 | 0.829
+   0.250   96  24  1200 |  0.0020   0.724 |  0.0045 |  0.0263   0.249 | 0.946
+   0.312   64  20  1200 |  0.0032   0.399 |  0.0022 |  0.0167   0.799 | 0.929
+   0.312  128  40  1200 |  0.0024   0.332 |  0.0020 |  0.0247   0.321 | 0.968
+   0.500   64  32  1200 |  0.0031   0.439 |  0.0032 |  0.0143   0.918 | 0.957
+
+==============================================================================
+ TREND VERDICT -- does the gap widen as rho grows?
+==============================================================================
+  OLS slope of weight-space KS statistic vs rho:     +0.00061
+  OLS slope of functional-space KS statistic vs rho: -0.01783
+  (warn threshold: slope > +0.020)
+
+  [OK]   No upward trend in either KS statistic across the swept rho range.
+         The indistinguishability gap does NOT widen as rho grows over
+         this (coarse) grid.
+  [OK]   min weight-space KS p-value across grid = 0.120 (all pass at alpha=0.05)
+  [OK]   min functional-space KS p-value across grid = 0.076 (all pass at alpha=0.05)
+  [OK]   backdoor fires (flip>0.75) at every grid point: True
+
+  total wall time: 65.4s
+  CSV written to /home/user/workspace/gw_work/goldwasser_section6/output/battery_sweep.csv

@@ -1,0 +1,25 @@
+========================================================================
+ EXACT closed-form CLWE sampler verification (Bruna Def 2.19)
+========================================================================
+  params: d_sparse=10, beta=0.01, tau=0.1, gamma=2*sqrt(d)=6.3246
+
+(1) Exact sampler vs its own analytic density
+  [PASS] secret-direction projection matches analytic hCLWE density (KS p>0.01)  --  KS stat=0.0040, p=0.536
+  [PASS] mixture width sigma = beta/sqrt(beta^2+gamma^2) as derived  --  sigma=0.00158
+  [PASS] dominant layer center near the half-integer target (gamma*mu approx 0.5 mod 1)  --  gamma*mu_dominant mod 1 = 0.5000
+
+(2) Exact vs rejection sampler (same params)
+  [PASS] exact sampler half-integer concentration >= rejection sampler  --  exact=1.000 vs rejection=0.960
+  [PASS] exact sampler acceptance rate is 1.0 (no proposals discarded)  --  rejection accept rate was 0.1985
+  [PASS] orthogonal marginal is N(0,1) (KS p>0.05)  --  KS p=0.692
+
+(3) Backdoored model built with method='exact'
+  [PASS] model records sampler_method='exact'
+  [PASS] backdoor fires under real key (flip>0.75)  --  flip_real=0.975
+  [PASS] fake key does NOT reliably flip (flip<0.65)  --  flip_fake=0.498
+  [PASS] clean accuracy parity with earnest (|diff|<0.05)  --  backdoored=0.6938 vs earnest=0.6917
+  [PASS] weight-space indistinguishability holds (KS vs N(0,1) p>0.05)  --  KS p=0.981
+
+========================================================================
+  11/11 checks passed
+========================================================================
