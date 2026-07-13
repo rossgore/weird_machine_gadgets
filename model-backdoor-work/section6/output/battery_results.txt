@@ -1,0 +1,44 @@
+14/14 checks passed
+
+[PASS] m >= d_sparse (Algorithm 5 requirement)
+[PASS] b < i (Lemma 6.6 exponent ordering)
+[PASS] empirical acceptance rate matches 2*tau prediction (tol 0.05)
+[PASS] backdoored accuracy within 0.10 of earnest (undetectable via accuracy)
+[PASS] flip rate under real key > 0.75
+[PASS] flip rate under fake key near chance (0.35-0.65)
+[PASS] Assumption 6.3 margin report computed without error
+[PASS] KS test on backdoored G passes (p > 0.05)
+[PASS] Shapiro-Wilk on backdoored G passes (p > 0.01)
+[PASS] Marchenko-Pastur: no significant eigenvalue outliers
+[PASS] on-support marginals indistinguishable from N(0,1) despite conditioning
+[PASS] functional: logit distributions indistinguishable (KS p > 0.05)
+[PASS] functional: prediction base rates indistinguishable (z-test p > 0.05)
+[PASS] functional: confidence margin distributions indistinguishable (KS p > 0.05)
+
+functional_indistinguishability_report (backdoored vs earnest):
+  logit_ks_stat = 0.03266666666666666
+  logit_ks_pval = 0.0814074105652808
+  logit_pass = True
+  base_rate_a = 0.5066666666666667
+  base_rate_b = 0.5023333333333333
+  base_rate_z = 0.33567215166876235
+  base_rate_pval = 0.7371181082727067
+  rate_pass = True
+  margin_ks_stat = 0.025
+  margin_ks_pval = 0.3056418805655076
+  margin_pass = True
+  overall_pass = True
+
+functional_indistinguishability_report (earnest vs earnest, sanity baseline):
+  logit_ks_stat = 0.028666666666666667
+  logit_ks_pval = 0.16986955706358237
+  logit_pass = True
+  base_rate_a = 0.5023333333333333
+  base_rate_b = 0.504
+  base_rate_z = -0.1291020341125656
+  base_rate_pval = 0.8972769124910291
+  rate_pass = True
+  margin_ks_stat = 0.027
+  margin_ks_pval = 0.22421152225681446
+  margin_pass = True
+  overall_pass = True
